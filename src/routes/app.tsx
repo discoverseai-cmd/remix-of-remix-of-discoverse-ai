@@ -378,6 +378,7 @@ function AgentApp() {
     const id = renameId;
     if (!id) return;
     const next = renameDraft.trim();
+    const finalTitle = next || undefined;
     setStore((prev) => ({
       ...prev,
       sessions: prev.sessions.map((s) =>
@@ -386,6 +387,9 @@ function AgentApp() {
     }));
     setRenameId(null);
     setRenameDraft("");
+    if (finalTitle) {
+      void supabase.from("chat_sessions").update({ title: finalTitle }).eq("id", id);
+    }
   }
 
   function cancelRename() {
@@ -418,7 +422,7 @@ function AgentApp() {
     setSidebarOpen(false);
   }
 
-  function startNewChat() {
+  async function startNewChat() {
     abortRef.current?.abort();
     setActiveSteps([]);
     setBusy(false);
@@ -426,21 +430,51 @@ function AgentApp() {
     setLastSent([]);
     setReuseLast(false);
     setAttachError(null);
-    const s = newSession();
+    setSidebarOpen(false);
+    if (!user) return;
+    const { data: created, error } = await supabase
+      .from("chat_sessions")
+      .insert({ user_id: user.id, title: "New chat" })
+      .select("id, title, updated_at")
+      .single();
+    if (error || !created) return;
+    const s: Session = {
+      id: created.id,
+      title: created.title,
+      messages: [WELCOME],
+      updatedAt: new Date(created.updated_at).getTime(),
+    };
     setStore((prev) => ({
       sessions: [s, ...prev.sessions],
       activeId: s.id,
     }));
-    setSidebarOpen(false);
   }
 
   function deleteSession(id: string) {
+    void supabase.from("chat_sessions").delete().eq("id", id);
     setStore((prev) => {
       const remaining = prev.sessions.filter((s) => s.id !== id);
       if (remaining.length === 0) {
-        const s = newSession();
         if (prev.activeId === id) abortRef.current?.abort();
-        return { sessions: [s], activeId: s.id };
+        // Recreate one async; for now, leave empty and rely on next startNewChat
+        if (user) {
+          void supabase
+            .from("chat_sessions")
+            .insert({ user_id: user.id, title: "New chat" })
+            .select("id, title, updated_at")
+            .single()
+            .then(({ data }) => {
+              if (!data) return;
+              const s: Session = {
+                id: data.id,
+                title: data.title,
+                messages: [WELCOME],
+                updatedAt: new Date(data.updated_at).getTime(),
+              };
+              setStore({ sessions: [s], activeId: s.id });
+            });
+        }
+        return { sessions: [], activeId: "" };
       }
       const activeId =
         prev.activeId === id ? remaining[0].id : prev.activeId;
