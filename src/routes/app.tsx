@@ -1530,6 +1530,11 @@ function AgentApp() {
           onSelectRun={openHistoricalRun}
         />
 
+        <div
+          className="border-t border-border p-2 shrink-0"
+          style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        >
+          <UserMenu
             email={user.email ?? ""}
             collapsed={sidebarCollapsed}
             running={busy}
