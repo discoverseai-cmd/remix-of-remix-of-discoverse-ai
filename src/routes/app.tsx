@@ -1041,33 +1041,63 @@ function AttachmentList({
   return (
     <div className={"flex flex-col gap-2 " + (alignEnd ? "items-end " : "") + className}>
       {images.length > 0 && (
-        <div
-          className={
-            "grid gap-2 " +
-            (images.length === 1
-              ? "grid-cols-1 max-w-xs"
-              : images.length === 2
-              ? "grid-cols-2 max-w-md"
-              : "grid-cols-2 sm:grid-cols-3 max-w-lg")
-          }
-        >
-          {images.map((a) => (
-            <a
-              key={a.id}
-              href={a.dataUrl!}
-              target="_blank"
-              rel="noreferrer"
-              className="block rounded-lg overflow-hidden border border-border bg-muted/40"
-            >
-              <img
-                src={a.dataUrl!}
-                alt={a.name}
-                className="w-full h-auto max-h-72 object-cover"
-                loading="lazy"
-              />
-            </a>
-          ))}
-        </div>
+        <>
+          {/* Mobile: horizontal snap carousel */}
+          <div
+            className={
+              "sm:hidden flex gap-2 overflow-x-auto snap-x snap-mandatory scroll-pl-1 -mx-1 px-1 pb-1 " +
+              "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
+              (alignEnd ? "justify-end" : "")
+            }
+            aria-label={`${images.length} image${images.length === 1 ? "" : "s"}`}
+          >
+            {images.map((a) => (
+              <a
+                key={a.id}
+                href={a.dataUrl!}
+                target="_blank"
+                rel="noreferrer"
+                className="snap-start shrink-0 block rounded-lg overflow-hidden border border-border bg-muted/40 active:opacity-90 transition-opacity"
+                style={{ width: images.length === 1 ? "min(85vw, 18rem)" : "min(70vw, 14rem)" }}
+              >
+                <img
+                  src={a.dataUrl!}
+                  alt={a.name}
+                  className="w-full h-auto max-h-64 object-cover"
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+          {/* Desktop / tablet: grid */}
+          <div
+            className={
+              "hidden sm:grid gap-2 " +
+              (images.length === 1
+                ? "grid-cols-1 max-w-xs"
+                : images.length === 2
+                ? "grid-cols-2 max-w-md"
+                : "grid-cols-2 md:grid-cols-3 max-w-lg")
+            }
+          >
+            {images.map((a) => (
+              <a
+                key={a.id}
+                href={a.dataUrl!}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-lg overflow-hidden border border-border bg-muted/40"
+              >
+                <img
+                  src={a.dataUrl!}
+                  alt={a.name}
+                  className="w-full h-auto max-h-72 object-cover"
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+        </>
       )}
       {others.map((a) => (
         <AttachmentCard key={a.id} attachment={a} />
