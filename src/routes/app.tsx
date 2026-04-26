@@ -984,6 +984,7 @@ function AgentApp() {
     // The worker streams steps into agent_steps via realtime; we surface them in
     // the timeline as they arrive. Fire-and-forget alongside the chat stream below.
     let agentRunChannel: ReturnType<typeof supabase.channel> | null = null;
+    setLastSentBySession((prev) => ({ ...prev, [sessionId]: trimmed }));
     try {
       const { runId } = await enqueueAgentRun({
         data: {
@@ -994,6 +995,11 @@ function AgentApp() {
         },
       });
       pushEvent("request", "Agent run queued", runId.slice(0, 8));
+      setActiveRunId(runId);
+      setActiveRunStatus("queued");
+      setActiveRunError(null);
+      setActiveRunCredits(0);
+      setActiveRunStepCount(0);
       agentRunChannel = supabase
         .channel(`agent-run-${runId}`)
         .on(
@@ -1014,6 +1020,7 @@ function AgentApp() {
                 ? step.content.slice(0, 240)
                 : step.tool ?? undefined;
             pushEvent("tokens", label, detail);
+            setActiveRunStepCount((n) => n + 1);
           },
         )
         .on(
@@ -1025,7 +1032,15 @@ function AgentApp() {
             filter: `id=eq.${runId}`,
           },
           (payload) => {
-            const next = payload.new as { status?: string; error?: string | null };
+            const next = payload.new as {
+              status?: string;
+              error?: string | null;
+              credits_spent?: number;
+            };
+            if (next.status) setActiveRunStatus(next.status);
+            if (typeof next.credits_spent === "number")
+              setActiveRunCredits(next.credits_spent);
+            if (next.error) setActiveRunError(next.error);
             if (next.status && next.status !== "running" && next.status !== "queued") {
               pushEvent(
                 next.status === "succeeded" ? "stream_end" : "error",
@@ -1047,6 +1062,8 @@ function AgentApp() {
         "Agent worker unavailable",
         err instanceof Error ? err.message : String(err),
       );
+      setActiveRunStatus("failed");
+      setActiveRunError(err instanceof Error ? err.message : String(err));
     }
 
     try {
