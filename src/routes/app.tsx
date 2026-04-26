@@ -924,15 +924,20 @@ function MessageBubble({ message }: { message: Message }) {
             )}
           </div>
         )}
-        <div
-          className={
-            isUser
-              ? "bg-foreground text-background rounded-2xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed"
-              : "text-[15px] leading-relaxed text-foreground whitespace-pre-wrap"
-          }
-        >
-          {message.content}
-        </div>
+        {message.attachments && message.attachments.length > 0 && (
+          <AttachmentList attachments={message.attachments} alignEnd={isUser} className="mb-2" />
+        )}
+        {message.content && (
+          <div
+            className={
+              isUser
+                ? "bg-foreground text-background rounded-2xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap"
+                : "text-[15px] leading-relaxed text-foreground whitespace-pre-wrap"
+            }
+          >
+            {message.content}
+          </div>
+        )}
         {message.steps && (
           <TraceCard
             steps={message.steps}
@@ -941,6 +946,188 @@ function MessageBubble({ message }: { message: Message }) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function kindIcon(kind: AttachmentKind) {
+  if (kind === "video") return <FileVideo className="size-4" />;
+  if (kind === "audio") return <FileAudio className="size-4" />;
+  if (kind === "archive") return <FileArchive className="size-4" />;
+  if (kind === "document") return <FileText className="size-4" />;
+  return <FileIcon className="size-4" />;
+}
+
+function PendingChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: Attachment;
+  onRemove: () => void;
+}) {
+  const isImg = attachment.kind === "image" && attachment.dataUrl;
+  return (
+    <div className="group relative inline-flex items-center gap-2 pl-1 pr-7 py-1 border border-border rounded-lg bg-muted/60 max-w-[220px]">
+      {isImg ? (
+        <img
+          src={attachment.dataUrl!}
+          alt={attachment.name}
+          className="size-8 rounded object-cover shrink-0"
+        />
+      ) : (
+        <div className="size-8 rounded bg-background border border-border inline-flex items-center justify-center shrink-0 text-muted-foreground">
+          {kindIcon(attachment.kind)}
+        </div>
+      )}
+      <div className="min-w-0">
+        <p className="text-xs font-medium truncate">{attachment.name}</p>
+        <p className="text-[10px] font-mono text-muted-foreground">
+          {formatBytes(attachment.size)}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute right-0.5 top-0.5 size-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-background"
+        aria-label="Remove"
+      >
+        <X className="size-3" />
+      </button>
+    </div>
+  );
+}
+
+function AttachmentList({
+  attachments,
+  alignEnd,
+  className = "",
+}: {
+  attachments: Attachment[];
+  alignEnd?: boolean;
+  className?: string;
+}) {
+  const images = attachments.filter((a) => a.kind === "image" && a.dataUrl);
+  const others = attachments.filter((a) => !(a.kind === "image" && a.dataUrl));
+  return (
+    <div className={"flex flex-col gap-2 " + (alignEnd ? "items-end " : "") + className}>
+      {images.length > 0 && (
+        <div
+          className={
+            "grid gap-2 " +
+            (images.length === 1
+              ? "grid-cols-1 max-w-xs"
+              : images.length === 2
+              ? "grid-cols-2 max-w-md"
+              : "grid-cols-2 sm:grid-cols-3 max-w-lg")
+          }
+        >
+          {images.map((a) => (
+            <a
+              key={a.id}
+              href={a.dataUrl!}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-lg overflow-hidden border border-border bg-muted/40"
+            >
+              <img
+                src={a.dataUrl!}
+                alt={a.name}
+                className="w-full h-auto max-h-72 object-cover"
+                loading="lazy"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {others.map((a) => (
+        <AttachmentCard key={a.id} attachment={a} />
+      ))}
+    </div>
+  );
+}
+
+function AttachmentCard({ attachment }: { attachment: Attachment }) {
+  const { kind, dataUrl, name, size, mime } = attachment;
+
+  if (kind === "video" && dataUrl) {
+    return (
+      <div className="border border-border rounded-xl overflow-hidden bg-background max-w-md">
+        <video src={dataUrl} controls className="w-full max-h-80 bg-black" />
+        <FileMeta name={name} size={size} mime={mime} dataUrl={dataUrl} />
+      </div>
+    );
+  }
+  if (kind === "audio" && dataUrl) {
+    return (
+      <div className="border border-border rounded-xl overflow-hidden bg-background max-w-md p-3">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="size-9 rounded-md bg-muted inline-flex items-center justify-center">
+            <FileAudio className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium truncate">{name}</p>
+            <p className="text-[11px] font-mono text-muted-foreground">{formatBytes(size)}</p>
+          </div>
+        </div>
+        <audio src={dataUrl} controls className="w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-border rounded-xl bg-background max-w-md inline-flex items-center gap-3 p-3">
+      <div className="size-10 rounded-md bg-muted inline-flex items-center justify-center text-muted-foreground shrink-0">
+        {kindIcon(kind)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium truncate">{name}</p>
+        <p className="text-[11px] font-mono text-muted-foreground">
+          {formatBytes(size)} · {kind}
+          {!dataUrl && " · preview unavailable"}
+        </p>
+      </div>
+      {dataUrl && (
+        <a
+          href={dataUrl}
+          download={name}
+          className="size-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label="Download"
+          title="Download"
+        >
+          <Download className="size-4" />
+        </a>
+      )}
+    </div>
+  );
+}
+
+function FileMeta({
+  name,
+  size,
+  mime: _mime,
+  dataUrl,
+}: {
+  name: string;
+  size: number;
+  mime: string;
+  dataUrl: string | null;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 border-t border-border">
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium truncate">{name}</p>
+        <p className="text-[11px] font-mono text-muted-foreground">{formatBytes(size)}</p>
+      </div>
+      {dataUrl && (
+        <a
+          href={dataUrl}
+          download={name}
+          className="size-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label="Download"
+        >
+          <Download className="size-3.5" />
+        </a>
+      )}
     </div>
   );
 }
