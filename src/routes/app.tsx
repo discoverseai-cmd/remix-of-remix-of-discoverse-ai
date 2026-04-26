@@ -1092,6 +1092,8 @@ function AgentApp() {
         const finalCost = usage
           ? costFromUsage(effectiveTier, trimmed, usage)
           : estimateCost(effectiveTier, trimmed);
+        const preEstimate = estimated; // captured at top of `send`
+
         if (finalCost > 0 || effectiveTier === "museum") {
           const result = await consume(finalCost, "chat_message", {
             sessionId,
@@ -1099,6 +1101,7 @@ function AgentApp() {
             data: {
               tier: effectiveTier,
               model: resolvedModel,
+              estimated: preEstimate,
               prompt_tokens: usage?.prompt_tokens,
               completion_tokens: usage?.completion_tokens,
             },
@@ -1106,12 +1109,19 @@ function AgentApp() {
           pushEvent(
             "tokens",
             "Credits charged",
-            `${finalCost} credit${finalCost === 1 ? "" : "s"} · ${result.balance} left`,
+            `${finalCost} credit${finalCost === 1 ? "" : "s"} · ${result.balance} left · est ~${preEstimate}`,
           );
         }
-        // Always record the actual cost (even if 0) so users see the live update
-        // replace the pre-send estimate after each round trip.
-        setLastCost({ amount: finalCost, tier: effectiveTier, at: Date.now() });
+        // Compare actual vs pre-send estimate so the UI can flag overruns/savings.
+        const delta: -1 | 0 | 1 =
+          finalCost > preEstimate ? 1 : finalCost < preEstimate ? -1 : 0;
+        setLastCost({
+          amount: finalCost,
+          estimated: preEstimate,
+          tier: effectiveTier,
+          at: Date.now(),
+          delta,
+        });
       } catch (e) {
         console.error("[credits] charge failed", e);
       }
