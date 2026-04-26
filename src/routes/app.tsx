@@ -1163,7 +1163,7 @@ function AgentApp() {
               <TraceCard steps={activeSteps} live />
             )}
 
-            {runEvents.length > 0 && (
+            {busy && runEvents.length > 0 && (
               <RunTimeline
                 events={runEvents}
                 open={timelineOpen}
@@ -1330,6 +1330,7 @@ function AgentApp() {
 
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
+  const [timelineOpen, setTimelineOpen] = useState(false);
   return (
     <div className={"flex " + (isUser ? "justify-end" : "justify-start")}>
       <div className={"max-w-[88%] sm:max-w-[80%] " + (isUser ? "" : "w-full")}>
@@ -1362,6 +1363,20 @@ function MessageBubble({ message }: { message: Message }) {
           <TraceCard
             steps={message.steps}
             interrupted={message.interrupted}
+            className="mt-3"
+          />
+        )}
+        {!isUser && message.timeline && message.timeline.length > 0 && (
+          <RunTimeline
+            events={message.timeline}
+            open={timelineOpen}
+            onToggle={() => setTimelineOpen((v) => !v)}
+            stopReason={message.stopReason}
+            errorMessage={
+              message.interrupted && message.stopReason === "error"
+                ? message.content
+                : undefined
+            }
             className="mt-3"
           />
         )}
