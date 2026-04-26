@@ -13,6 +13,9 @@ import {
   PanelLeft,
   MessageSquare,
   X,
+  Pencil,
+  Check,
+  Search,
 } from "lucide-react";
 import { Logo } from "../components/site/Logo";
 
