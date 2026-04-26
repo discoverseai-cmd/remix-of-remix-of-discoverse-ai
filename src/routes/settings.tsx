@@ -105,7 +105,6 @@ function SettingsPage() {
     try {
       const identity = (user.identities ?? []).find((i) => i.provider === id);
       if (!identity) throw new Error("Provider not linked.");
-      // @ts-expect-error supabase v2 typing for unlinkIdentity may vary by version
       const { error } = await supabase.auth.unlinkIdentity(identity);
       if (error) throw error;
     } catch (err) {
