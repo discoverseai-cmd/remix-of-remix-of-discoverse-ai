@@ -74,7 +74,11 @@ type Attachment = {
   size: number;
   mime: string;
   kind: AttachmentKind;
-  /** data: URL (small files) or null when too large to persist */
+  /** Path inside the chat-attachments storage bucket (set after upload). */
+  storagePath?: string | null;
+  /** Local-only File handle pending upload (not persisted, not serialized to DB). */
+  file?: File;
+  /** Live URL (signed, or local blob preview) — not persisted. */
   dataUrl: string | null;
 };
 type Message = {
@@ -98,8 +102,8 @@ type Store = {
   activeId: string;
 };
 
-const STORAGE_KEY = "discoverse.chat.v3";
-const MAX_PERSIST_BYTES = 5 * 1024 * 1024; // 5MB per file kept inline
+const ATTACHMENTS_BUCKET = "chat-attachments";
+const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour signed URLs
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
 const MAX_FILES_PER_MESSAGE = 10;
 const CHAT_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
@@ -139,46 +143,6 @@ function planSteps(): Step[] {
     { kind: "tool", label: "E2B · executing sandboxed step" },
     { kind: "reason", label: "OpenClaw · synthesizing result" },
   ];
-}
-
-function loadStore(): Store {
-  if (typeof window === "undefined") {
-    const s = newSession();
-    return { sessions: [s], activeId: s.id };
-  }
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Store;
-      if (parsed?.sessions?.length) {
-        const activeId = parsed.sessions.some((s) => s.id === parsed.activeId)
-          ? parsed.activeId
-          : parsed.sessions[0].id;
-        return { sessions: parsed.sessions, activeId };
-      }
-    }
-    // Migrate older session storage (v2) or single-chat (v1).
-    const v2 = window.localStorage.getItem("discoverse.chat.v2");
-    if (v2) {
-      const parsed = JSON.parse(v2) as Store;
-      if (parsed?.sessions?.length) return parsed;
-    }
-    const legacy = window.localStorage.getItem("discoverse.chat.v1");
-    if (legacy) {
-      const messages = JSON.parse(legacy) as Message[];
-      const s: Session = {
-        id: uid(),
-        title: deriveTitle(messages) ?? "Previous chat",
-        messages: messages?.length ? messages : [WELCOME],
-        updatedAt: Date.now(),
-      };
-      return { sessions: [s], activeId: s.id };
-    }
-  } catch {
-    /* ignore */
-  }
-  const s = newSession();
-  return { sessions: [s], activeId: s.id };
 }
 
 function deriveTitle(messages: Message[]): string | null {
@@ -247,13 +211,12 @@ function readAsDataURL(file: File): Promise<string> {
 
 async function fileToAttachment(file: File): Promise<Attachment> {
   const kind = detectKind(file);
+  // Local preview only — this URL won't be persisted.
   let dataUrl: string | null = null;
-  if (file.size <= MAX_PERSIST_BYTES) {
-    try {
-      dataUrl = await readAsDataURL(file);
-    } catch {
-      dataUrl = null;
-    }
+  try {
+    dataUrl = URL.createObjectURL(file);
+  } catch {
+    dataUrl = null;
   }
   return {
     id: uid(),
@@ -262,7 +225,64 @@ async function fileToAttachment(file: File): Promise<Attachment> {
     mime: file.type || "application/octet-stream",
     kind,
     dataUrl,
+    file,
   };
+}
+
+/** Upload a single attachment to the chat-attachments bucket (idempotent). */
+async function uploadAttachment(
+  att: Attachment,
+  userId: string,
+  sessionId: string
+): Promise<Attachment> {
+  if (att.storagePath || !att.file) return att;
+  const safeName = att.name.replace(/[^\w.\-]+/g, "_");
+  const path = `${userId}/${sessionId}/${att.id}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(ATTACHMENTS_BUCKET)
+    .upload(path, att.file, {
+      contentType: att.mime || "application/octet-stream",
+      upsert: false,
+    });
+  if (error) {
+    console.error("Attachment upload failed", error);
+    return att;
+  }
+  return { ...att, storagePath: path };
+}
+
+/** Strip non-serializable fields before writing to the DB. */
+function serializeAttachment(att: Attachment) {
+  return {
+    id: att.id,
+    name: att.name,
+    size: att.size,
+    mime: att.mime,
+    kind: att.kind,
+    storagePath: att.storagePath ?? null,
+  };
+}
+
+/** Resolve signed URLs for stored attachments after hydration. */
+async function hydrateAttachments(
+  attachments: Attachment[] | null | undefined
+): Promise<Attachment[] | undefined> {
+  if (!attachments || attachments.length === 0) return undefined;
+  const paths = attachments
+    .map((a) => a.storagePath)
+    .filter((p): p is string => !!p);
+  if (paths.length === 0) return attachments.map((a) => ({ ...a, dataUrl: null }));
+  const { data } = await supabase.storage
+    .from(ATTACHMENTS_BUCKET)
+    .createSignedUrls(paths, SIGNED_URL_TTL_SECONDS);
+  const byPath = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.path && row.signedUrl) byPath.set(row.path, row.signedUrl);
+  }
+  return attachments.map((a) => ({
+    ...a,
+    dataUrl: a.storagePath ? byPath.get(a.storagePath) ?? null : null,
+  }));
 }
 
 function AgentApp() {
@@ -320,12 +340,21 @@ function AgentApp() {
           .order("created_at", { ascending: true });
         if (cancelled) return;
         const byId: Record<string, Message[]> = {};
-        for (const row of msgRows ?? []) {
+        const hydratedRows = await Promise.all(
+          (msgRows ?? []).map(async (row) => {
+            const attachments = await hydrateAttachments(
+              (row.attachments as Attachment[] | null) ?? undefined
+            );
+            return { row, attachments };
+          })
+        );
+        if (cancelled) return;
+        for (const { row, attachments } of hydratedRows) {
           (byId[row.session_id] ||= []).push({
             id: row.id,
             role: row.role as Role,
             content: row.content,
-            attachments: (row.attachments as Attachment[] | null) ?? undefined,
+            attachments,
             steps: (row.steps as Step[] | null) ?? undefined,
             interrupted: row.interrupted ?? undefined,
             timeline:
@@ -565,13 +594,22 @@ function AgentApp() {
 
   async function send(text: string) {
     const trimmed = text.trim();
-    // Combine current pending with reused-last attachments (dedup by id).
-    const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
-    const attachments = [...pending, ...reused];
-    if ((!trimmed && attachments.length === 0) || busy) return;
+    if (busy) return;
     if (!user) return;
     const sessionId = store.activeId;
     if (!sessionId) return;
+    // Combine current pending with reused-last attachments (dedup by id).
+    const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
+    const attachmentsRaw = [...pending, ...reused];
+    if (!trimmed && attachmentsRaw.length === 0) return;
+    setBusy(true);
+    setStreamStatus("idle");
+    // Upload pending attachments to cloud storage; reused already have storagePath.
+    const attachments = await Promise.all(
+      attachmentsRaw.map((a) =>
+        a.storagePath ? Promise.resolve(a) : uploadAttachment(a, user.id, sessionId)
+      )
+    );
     const userMsgId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
@@ -600,8 +638,6 @@ function AgentApp() {
     setAttachError(null);
     if (attachments.length) setLastSent(attachments);
     setReuseLast(false);
-    setBusy(true);
-    setStreamStatus("idle");
     const events: TimelineEvent[] = [];
     const pushEvent = (
       kind: TimelineEventKind,
@@ -635,7 +671,7 @@ function AgentApp() {
       user_id: user.id,
       role: "user",
       content: trimmed,
-      attachments: attachments.length ? attachments : null,
+      attachments: attachments.length ? attachments.map(serializeAttachment) : null,
     });
     const newTitle =
       activeSession?.title === "New chat"
