@@ -2590,7 +2590,7 @@ function ModelPicker({
         <ChevronDown className="size-3" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-1.5 w-72 rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
+        <div className="absolute right-0 mt-1.5 w-[min(18rem,calc(100vw-1.5rem))] rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
           <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground border-b border-border">
             Discoverse mode
           </div>
