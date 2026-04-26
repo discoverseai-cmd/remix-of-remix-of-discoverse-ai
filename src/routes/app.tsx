@@ -782,12 +782,14 @@ function AgentApp() {
     setActiveRunStepCount(steps.length);
     const events: TimelineEvent[] = [
       {
+        id: `replay-${run.id}`,
         kind: "request",
         label: "Run replayed",
         detail: `${run.id.slice(0, 8)} · ${run.status}`,
         ts: Date.now(),
       },
       ...steps.map((s) => ({
+        id: s.id,
         kind: "tokens" as const,
         label: s.title || (s.tool ? `${s.kind} · ${s.tool}` : s.kind),
         detail:
