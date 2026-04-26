@@ -2501,6 +2501,8 @@ function CostHint({
   busy,
   tier,
   balance,
+  estimate,
+  insufficient,
   lastCost,
   streamStatus,
 }: {
@@ -2508,19 +2510,22 @@ function CostHint({
   busy: boolean;
   tier: Tier;
   balance: number;
-  lastCost: { amount: number; tier: Tier; at: number } | null;
+  estimate: number;
+  insufficient: boolean;
+  lastCost: {
+    amount: number;
+    estimated: number;
+    tier: Tier;
+    at: number;
+    delta: -1 | 0 | 1;
+  } | null;
   streamStatus: "idle" | "streaming" | "done";
 }) {
-  // While streaming, show "calculating real cost…"
-  // After response arrives (status=done), surface the actual final cost briefly.
-  // Otherwise, show pre-flight estimate based on the current draft.
   const trimmed = input.trim();
-  const estimate = trimmed.length > 0 ? estimateCost(tier, trimmed) : 0;
   // Show the actual charge briefly after a response finishes. Stays visible for
   // ~6s as long as the user hasn't started typing the next prompt.
   const justFinished = !busy && lastCost && Date.now() - lastCost.at < 6000;
   const showActual = justFinished && (streamStatus === "done" || trimmed.length === 0);
-  const insufficient = !busy && trimmed.length > 0 && estimate > balance;
 
   let body: React.ReactNode;
   if (busy && streamStatus === "streaming") {
@@ -2531,41 +2536,62 @@ function CostHint({
       </span>
     );
   } else if (showActual && lastCost) {
+    // Compare actual vs the pre-send estimate so users can see if the response
+    // was cheaper or more expensive than the heuristic predicted.
+    const diff = lastCost.amount - lastCost.estimated;
+    const deltaLabel =
+      lastCost.delta === 0
+        ? "matched estimate"
+        : lastCost.delta > 0
+        ? `${diff} more than est ~${lastCost.estimated}`
+        : `${Math.abs(diff)} less than est ~${lastCost.estimated}`;
+    const deltaColor =
+      lastCost.delta === 0
+        ? "text-muted-foreground"
+        : lastCost.delta > 0
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-emerald-600 dark:text-emerald-400";
     body = (
-      <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex items-center gap-1.5 flex-wrap justify-center">
         <Sparkles className="size-3 text-emerald-500" />
         <span className="text-foreground/80">
           Charged <span className="font-mono">{lastCost.amount}</span>{" "}
           credit{lastCost.amount === 1 ? "" : "s"}
         </span>
         <span className="opacity-60">·</span>
+        <span className={deltaColor}>{deltaLabel}</span>
+        <span className="opacity-60">·</span>
         <span>{balance.toLocaleString()} left</span>
+      </span>
+    );
+  } else if (insufficient) {
+    body = (
+      <span className="inline-flex items-center gap-1.5 flex-wrap justify-center text-red-500">
+        <Lock className="size-3" />
+        <span>Not enough credits</span>
+        <span className="opacity-80">
+          — needs ~<span className="font-mono">{estimate}</span>,{" "}
+          <span className="font-mono">{balance}</span> left
+        </span>
       </span>
     );
   } else if (trimmed.length > 0) {
     body = (
       <span className="inline-flex items-center gap-1.5 flex-wrap justify-center">
-        <span className={insufficient ? "text-red-500" : "text-muted-foreground"}>
-          Estimated cost
-        </span>
-        <span
-          className={
-            "font-mono px-1.5 py-0.5 rounded border " +
-            (insufficient
-              ? "border-red-500/40 text-red-500 bg-red-500/5"
-              : "border-border text-foreground/80")
-          }
-        >
+        <span className="text-muted-foreground">Estimated</span>
+        <span className="font-mono px-1.5 py-0.5 rounded border border-border text-foreground/80">
           ~{estimate} {estimate === 1 ? "credit" : "credits"}
         </span>
         <span className="opacity-60">·</span>
-        <span>final cost from real token usage</span>
+        <span>final from real token usage</span>
       </span>
     );
   } else {
     body = (
       <span>
-        {tier === "museum" ? "Museum mode · greetings free" : "Park mode · 100 free credits/day"}
+        {tier === "museum"
+          ? "Museum mode · charged from real output tokens"
+          : "Park mode · charged from real output tokens"}
       </span>
     );
   }
