@@ -1531,30 +1531,3 @@ function UserMenu({
     </div>
   );
 }
-        )}
-      </button>
-      {open && (
-        <div
-          className={
-            "absolute bottom-full mb-2 w-56 rounded-xl border border-border bg-background shadow-lg overflow-hidden z-50 " +
-            (collapsed ? "left-0" : "left-0 right-0 w-auto")
-          }
-        >
-          <div className="px-3 py-2.5 border-b border-border">
-            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-              Signed in
-            </p>
-            <p className="mt-0.5 text-sm truncate">{email || "—"}</p>
-          </div>
-          <button
-            onClick={signOut}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-muted transition-colors"
-          >
-            <LogOut className="size-3.5" />
-            Sign out
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
