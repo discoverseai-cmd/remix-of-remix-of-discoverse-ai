@@ -2576,7 +2576,7 @@ function ModelPicker({
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         className={
-          "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-colors disabled:opacity-50 " +
+          "inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-colors disabled:opacity-50 shrink-0 " +
           (isPremium
             ? "border-foreground bg-foreground text-background hover:opacity-90"
             : "border-border hover:bg-muted")
