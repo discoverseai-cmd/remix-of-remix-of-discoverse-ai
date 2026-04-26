@@ -2460,6 +2460,86 @@ function AssistantMarkdown({
   );
 }
 
+/* ========== CostHint — live credit estimate / actual cost under composer ========== */
+
+function CostHint({
+  input,
+  busy,
+  tier,
+  balance,
+  lastCost,
+  streamStatus,
+}: {
+  input: string;
+  busy: boolean;
+  tier: Tier;
+  balance: number;
+  lastCost: { amount: number; tier: Tier; at: number } | null;
+  streamStatus: "idle" | "streaming" | "done";
+}) {
+  // While streaming, show "calculating real cost…"
+  // After response arrives (status=done), surface the actual final cost briefly.
+  // Otherwise, show pre-flight estimate based on the current draft.
+  const trimmed = input.trim();
+  const estimate = trimmed.length > 0 ? estimateCost(tier, trimmed) : 0;
+  const showActual = streamStatus === "done" && lastCost && Date.now() - lastCost.at < 6000;
+  const insufficient = !busy && trimmed.length > 0 && estimate > balance;
+
+  let body: React.ReactNode;
+  if (busy && streamStatus === "streaming") {
+    body = (
+      <span className="inline-flex items-center gap-1.5">
+        <Loader2 className="size-3 animate-spin" />
+        Calculating real token cost…
+      </span>
+    );
+  } else if (showActual && lastCost) {
+    body = (
+      <span className="inline-flex items-center gap-1.5">
+        <Sparkles className="size-3 text-emerald-500" />
+        <span className="text-foreground/80">
+          Charged <span className="font-mono">{lastCost.amount}</span>{" "}
+          credit{lastCost.amount === 1 ? "" : "s"}
+        </span>
+        <span className="opacity-60">·</span>
+        <span>{balance.toLocaleString()} left</span>
+      </span>
+    );
+  } else if (trimmed.length > 0) {
+    body = (
+      <span className="inline-flex items-center gap-1.5 flex-wrap justify-center">
+        <span className={insufficient ? "text-red-500" : "text-muted-foreground"}>
+          Estimated cost
+        </span>
+        <span
+          className={
+            "font-mono px-1.5 py-0.5 rounded border " +
+            (insufficient
+              ? "border-red-500/40 text-red-500 bg-red-500/5"
+              : "border-border text-foreground/80")
+          }
+        >
+          ~{estimate} {estimate === 1 ? "credit" : "credits"}
+        </span>
+        <span className="opacity-60">·</span>
+        <span>final cost from real token usage</span>
+      </span>
+    );
+  } else {
+    body = (
+      <span>
+        {tier === "museum" ? "Museum mode · greetings free" : "Park mode · 100 free credits/day"}
+      </span>
+    );
+  }
+
+  return (
+    <p className="mt-2 text-[11px] text-muted-foreground text-center px-2">
+      {body}
+    </p>
+  );
+}
+
 /* ========== ModePicker ========== */
 
 function ModelPicker({
