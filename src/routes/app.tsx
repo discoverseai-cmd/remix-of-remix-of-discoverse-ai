@@ -416,6 +416,11 @@ function AgentApp() {
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Credits + tier state
+  const { credits, consume, redeemCode, refresh: refreshCredits } = useCredits();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [creditError, setCreditError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
