@@ -1147,6 +1147,15 @@ function AgentApp() {
               <TraceCard steps={activeSteps} live />
             )}
 
+            {runEvents.length > 0 && (
+              <RunTimeline
+                events={runEvents}
+                open={timelineOpen}
+                onToggle={() => setTimelineOpen((v) => !v)}
+                streaming={streamStatus === "streaming"}
+              />
+            )}
+
             {messages.length <= 1 && !busy && (
               <div className="pt-4">
                 <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-3">
