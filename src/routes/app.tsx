@@ -701,6 +701,12 @@ function AgentApp() {
   }
 
   function setSessionModel(sessionId: string, model: ModeChoice) {
+    // Museum is locked behind upgrade. If the user isn't on museum tier, open
+    // the upgrade dialog instead of switching the chat.
+    if (model === "museum" && credits?.tier !== "museum") {
+      setUpgradeOpen(true);
+      return;
+    }
     setStore((prev) => ({
       ...prev,
       sessions: prev.sessions.map((s) =>
