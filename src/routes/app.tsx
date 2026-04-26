@@ -775,6 +775,25 @@ function AgentApp() {
     const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
     const attachmentsRaw = [...pending, ...reused];
     if (!trimmed && attachmentsRaw.length === 0) return;
+
+    // === Credit gate ===
+    // Effective tier for this run: a museum chat opened by a user that is no
+    // longer on Museum (e.g. promo expired) silently falls back to park pricing.
+    const userTier = credits?.tier ?? "park";
+    const sessionMode = activeSession?.model ?? DEFAULT_MODE;
+    const effectiveTier = sessionMode === "museum" && userTier === "museum" ? "museum" : "park";
+    const estimated = estimateCost(effectiveTier, trimmed);
+    if (estimated > 0 && (credits?.balance ?? 0) < estimated) {
+      setCreditError(
+        userTier === "park"
+          ? `Out of credits — ${credits?.balance ?? 0} left, this needs ~${estimated}. Upgrade to Museum or wait for daily reset.`
+          : `Out of credits — ${credits?.balance ?? 0} left this month, this needs ~${estimated}.`,
+      );
+      setUpgradeOpen(true);
+      return;
+    }
+    setCreditError(null);
+
     setBusy(true);
     setStreamStatus("idle");
     // Upload pending attachments to cloud storage; reused already have storagePath.
