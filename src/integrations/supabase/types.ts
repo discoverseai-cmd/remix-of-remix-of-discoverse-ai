@@ -14,6 +14,180 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_memory_session: {
+        Row: {
+          content: string
+          created_at: string
+          embedding: string | null
+          id: string
+          meta: Json | null
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          meta?: Json | null
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          meta?: Json | null
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_memory_session_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_memory_user: {
+        Row: {
+          content: string
+          created_at: string
+          embedding: string | null
+          id: string
+          meta: Json | null
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          meta?: Json | null
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          meta?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      agent_runs: {
+        Row: {
+          created_at: string
+          credits_spent: number
+          error: string | null
+          final_output: string | null
+          finished_at: string | null
+          id: string
+          input: string
+          message_id: string | null
+          model: string
+          session_id: string
+          started_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          credits_spent?: number
+          error?: string | null
+          final_output?: string | null
+          finished_at?: string | null
+          id?: string
+          input?: string
+          message_id?: string | null
+          model?: string
+          session_id: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          credits_spent?: number
+          error?: string | null
+          final_output?: string | null
+          finished_at?: string | null
+          id?: string
+          input?: string
+          message_id?: string | null
+          model?: string
+          session_id?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_runs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_steps: {
+        Row: {
+          content: string | null
+          created_at: string
+          credits: number
+          data: Json | null
+          id: string
+          idx: number
+          kind: string
+          run_id: string
+          title: string | null
+          tool: string | null
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          credits?: number
+          data?: Json | null
+          id?: string
+          idx: number
+          kind: string
+          run_id: string
+          title?: string | null
+          tool?: string | null
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          credits?: number
+          data?: Json | null
+          id?: string
+          idx?: number
+          kind?: string
+          run_id?: string
+          title?: string | null
+          tool?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_steps_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_messages: {
         Row: {
           attachments: Json | null
@@ -238,6 +412,41 @@ export type Database = {
           _meta?: Json
           _reason: string
           _session_id?: string
+          _user_id: string
+        }
+        Returns: number
+      }
+      match_session_memory: {
+        Args: {
+          _k?: number
+          _query: string
+          _session_id: string
+          _user_id: string
+        }
+        Returns: {
+          content: string
+          id: string
+          similarity: number
+        }[]
+      }
+      match_user_memory: {
+        Args: { _k?: number; _query: string; _user_id: string }
+        Returns: {
+          content: string
+          id: string
+          similarity: number
+        }[]
+      }
+      record_agent_step: {
+        Args: {
+          _content: string
+          _credits: number
+          _data: Json
+          _idx: number
+          _kind: string
+          _run_id: string
+          _title: string
+          _tool: string
           _user_id: string
         }
         Returns: number
