@@ -51,6 +51,22 @@ export const Route = createFileRoute("/app")({
 
 type Role = "user" | "agent" | "system";
 type Step = { kind: "reason" | "tool" | "memory"; label: string };
+type TimelineEventKind =
+  | "prompt"
+  | "attachments"
+  | "request"
+  | "stream_start"
+  | "tokens"
+  | "stream_end"
+  | "stop"
+  | "error";
+type TimelineEvent = {
+  id: string;
+  ts: number;
+  kind: TimelineEventKind;
+  label: string;
+  detail?: string;
+};
 type AttachmentKind = "image" | "video" | "audio" | "archive" | "document" | "file";
 type Attachment = {
   id: string;
