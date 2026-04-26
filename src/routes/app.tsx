@@ -1363,9 +1363,12 @@ function AgentApp() {
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
+            {messages.map((m, i) => {
+              const isLast = i === messages.length - 1;
+              const isStreaming =
+                isLast && m.role === "agent" && streamStatus === "streaming";
+              return <MessageBubble key={m.id} message={m} streaming={isStreaming} />;
+            })}
 
             {busy && activeSteps.length > 0 && (
               <TraceCard steps={activeSteps} live />
