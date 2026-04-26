@@ -27,6 +27,9 @@ import {
   LogOut,
   Loader2,
   UserCog,
+  ChevronDown,
+  ChevronRight,
+  Activity,
 } from "lucide-react";
 import { Logo } from "../components/site/Logo";
 import { useAuth } from "../hooks/use-auth";
