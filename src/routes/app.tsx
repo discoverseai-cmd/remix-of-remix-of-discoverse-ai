@@ -211,13 +211,12 @@ function readAsDataURL(file: File): Promise<string> {
 
 async function fileToAttachment(file: File): Promise<Attachment> {
   const kind = detectKind(file);
+  // Local preview only — this URL won't be persisted.
   let dataUrl: string | null = null;
-  if (file.size <= MAX_PERSIST_BYTES) {
-    try {
-      dataUrl = await readAsDataURL(file);
-    } catch {
-      dataUrl = null;
-    }
+  try {
+    dataUrl = URL.createObjectURL(file);
+  } catch {
+    dataUrl = null;
   }
   return {
     id: uid(),
@@ -226,7 +225,64 @@ async function fileToAttachment(file: File): Promise<Attachment> {
     mime: file.type || "application/octet-stream",
     kind,
     dataUrl,
+    file,
   };
+}
+
+/** Upload a single attachment to the chat-attachments bucket (idempotent). */
+async function uploadAttachment(
+  att: Attachment,
+  userId: string,
+  sessionId: string
+): Promise<Attachment> {
+  if (att.storagePath || !att.file) return att;
+  const safeName = att.name.replace(/[^\w.\-]+/g, "_");
+  const path = `${userId}/${sessionId}/${att.id}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(ATTACHMENTS_BUCKET)
+    .upload(path, att.file, {
+      contentType: att.mime || "application/octet-stream",
+      upsert: false,
+    });
+  if (error) {
+    console.error("Attachment upload failed", error);
+    return att;
+  }
+  return { ...att, storagePath: path };
+}
+
+/** Strip non-serializable fields before writing to the DB. */
+function serializeAttachment(att: Attachment) {
+  return {
+    id: att.id,
+    name: att.name,
+    size: att.size,
+    mime: att.mime,
+    kind: att.kind,
+    storagePath: att.storagePath ?? null,
+  };
+}
+
+/** Resolve signed URLs for stored attachments after hydration. */
+async function hydrateAttachments(
+  attachments: Attachment[] | null | undefined
+): Promise<Attachment[] | undefined> {
+  if (!attachments || attachments.length === 0) return undefined;
+  const paths = attachments
+    .map((a) => a.storagePath)
+    .filter((p): p is string => !!p);
+  if (paths.length === 0) return attachments.map((a) => ({ ...a, dataUrl: null }));
+  const { data } = await supabase.storage
+    .from(ATTACHMENTS_BUCKET)
+    .createSignedUrls(paths, SIGNED_URL_TTL_SECONDS);
+  const byPath = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.path && row.signedUrl) byPath.set(row.path, row.signedUrl);
+  }
+  return attachments.map((a) => ({
+    ...a,
+    dataUrl: a.storagePath ? byPath.get(a.storagePath) ?? null : null,
+  }));
 }
 
 function AgentApp() {
