@@ -128,7 +128,12 @@ function loadStore(): Store {
         return { sessions: parsed.sessions, activeId };
       }
     }
-    // Migrate v1 single-chat storage if present.
+    // Migrate older session storage (v2) or single-chat (v1).
+    const v2 = window.localStorage.getItem("discoverse.chat.v2");
+    if (v2) {
+      const parsed = JSON.parse(v2) as Store;
+      if (parsed?.sessions?.length) return parsed;
+    }
     const legacy = window.localStorage.getItem("discoverse.chat.v1");
     if (legacy) {
       const messages = JSON.parse(legacy) as Message[];
