@@ -1075,6 +1075,35 @@ function AgentApp() {
         console.error("Failed to save assistant message", assistantMsgError);
       }
 
+      // === Charge credits based on real token usage ===
+      // We charge after the response so cost reflects what the model actually
+      // produced. If the upstream didn't report usage, we fall back to the
+      // pre-flight estimate so users still see consistent billing.
+      try {
+        const finalCost = usage
+          ? costFromUsage(effectiveTier, trimmed, usage)
+          : estimateCost(effectiveTier, trimmed);
+        if (finalCost > 0 || effectiveTier === "museum") {
+          const result = await consume(finalCost, "chat_message", {
+            sessionId,
+            messageId: assistantId,
+            data: {
+              tier: effectiveTier,
+              model: resolvedModel,
+              prompt_tokens: usage?.prompt_tokens,
+              completion_tokens: usage?.completion_tokens,
+            },
+          });
+          pushEvent(
+            "tokens",
+            "Credits charged",
+            `${finalCost} credit${finalCost === 1 ? "" : "s"} · ${result.balance} left`,
+          );
+        }
+      } catch (e) {
+        console.error("[credits] charge failed", e);
+      }
+
       setActiveSteps([]);
       setBusy(false);
       setStreamStatus("done");
