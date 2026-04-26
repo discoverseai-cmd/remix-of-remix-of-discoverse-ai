@@ -930,6 +930,7 @@ function AgentApp() {
     let errorMsg: string | null = null;
     let tokenCount = 0;
     let stopReason: string = "completed";
+    let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null = null;
 
     const updateAssistant = (content: string, extra?: Partial<Message>) => {
       setStore((prev) => {
