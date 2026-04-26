@@ -2482,9 +2482,10 @@ function CostHint({
   // Otherwise, show pre-flight estimate based on the current draft.
   const trimmed = input.trim();
   const estimate = trimmed.length > 0 ? estimateCost(tier, trimmed) : 0;
-  // Show the actual charge for ~6s after a response finishes (works whether
-  // streamStatus is still "done" or has already flipped back to "idle").
-  const showActual = !busy && lastCost && Date.now() - lastCost.at < 6000 && trimmed.length === 0;
+  // Show the actual charge briefly after a response finishes. Stays visible for
+  // ~6s as long as the user hasn't started typing the next prompt.
+  const justFinished = !busy && lastCost && Date.now() - lastCost.at < 6000;
+  const showActual = justFinished && (streamStatus === "done" || trimmed.length === 0);
   const insufficient = !busy && trimmed.length > 0 && estimate > balance;
 
   let body: React.ReactNode;
