@@ -484,7 +484,8 @@ function AgentApp() {
         .update({ title: finalTitle, updated_at: new Date().toISOString() })
         .eq("id", id)
         .then(({ error }) => {
-          if (error) console.error("Failed to rename chat session", error);
+          if (error) console.error("[chat-audit] rename FAILED", id, error);
+          else console.info("[chat-audit] rename ok", id, finalTitle);
         });
     }
   }
@@ -534,7 +535,11 @@ function AgentApp() {
       .insert({ user_id: user.id, title: "New chat" })
       .select("id, title, updated_at")
       .single();
-    if (error || !created) return;
+    if (error || !created) {
+      console.error("[chat-audit] create FAILED", error);
+      return;
+    }
+    console.info("[chat-audit] create ok", created.id);
     const s: Session = {
       id: created.id,
       title: created.title,
@@ -553,7 +558,8 @@ function AgentApp() {
       .delete()
       .eq("id", id)
       .then(({ error }) => {
-        if (error) console.error("Failed to delete chat session", error);
+        if (error) console.error("[chat-audit] delete FAILED", id, error);
+        else console.info("[chat-audit] delete ok", id);
       });
     setStore((prev) => {
       const remaining = prev.sessions.filter((s) => s.id !== id);
