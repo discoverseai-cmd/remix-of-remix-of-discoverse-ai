@@ -198,6 +198,7 @@ function newSession(): Session {
     title: "New chat",
     messages: [WELCOME],
     updatedAt: Date.now(),
+    model: DEFAULT_MODEL,
   };
 }
 
