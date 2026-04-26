@@ -825,7 +825,37 @@ function AgentApp() {
             onSubmit={onSubmit}
             className="max-w-3xl mx-auto px-4 sm:px-6 py-3 sm:py-4"
           >
-            <div className="relative flex items-end gap-2 border border-border rounded-2xl bg-background shadow-sm focus-within:border-foreground/40 transition-colors">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files) addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            {pending.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {pending.map((a) => (
+                  <PendingChip key={a.id} attachment={a} onRemove={() => removePending(a.id)} />
+                ))}
+              </div>
+            )}
+            {attachError && (
+              <p className="mb-2 text-[11px] text-foreground/70">{attachError}</p>
+            )}
+            <div className="relative flex items-end gap-1 border border-border rounded-2xl bg-background shadow-sm focus-within:border-foreground/40 transition-colors">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy || pending.length >= MAX_FILES_PER_MESSAGE}
+                className="m-1.5 inline-flex items-center justify-center size-10 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 transition-colors"
+                aria-label="Attach files"
+                title="Attach files"
+              >
+                <Paperclip className="size-4" />
+              </button>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -839,11 +869,11 @@ function AgentApp() {
                 placeholder={
                   busy
                     ? "Agent is running… press stop to interrupt"
-                    : "Give the agent an objective…"
+                    : "Give the agent an objective or drop files…"
                 }
                 rows={1}
                 disabled={busy}
-                className="flex-1 resize-none bg-transparent px-4 py-3.5 text-[15px] outline-none placeholder:text-muted-foreground max-h-40 disabled:opacity-60"
+                className="flex-1 resize-none bg-transparent pl-1 pr-2 py-3.5 text-[15px] outline-none placeholder:text-muted-foreground max-h-40 disabled:opacity-60"
               />
               {busy ? (
                 <button
@@ -858,7 +888,7 @@ function AgentApp() {
               ) : (
                 <button
                   type="submit"
-                  disabled={!input.trim()}
+                  disabled={!input.trim() && pending.length === 0}
                   className="m-1.5 inline-flex items-center justify-center size-10 rounded-xl bg-foreground text-background disabled:opacity-30 transition-opacity"
                   aria-label="Send"
                 >
