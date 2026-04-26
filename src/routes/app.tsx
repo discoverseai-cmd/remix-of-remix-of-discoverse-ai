@@ -1048,18 +1048,78 @@ function kindIcon(kind: AttachmentKind) {
 function PendingChip({
   attachment,
   onRemove,
+  index,
+  total,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragEnter,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  onMoveLeft,
+  onMoveRight,
 }: {
   attachment: Attachment;
   onRemove: () => void;
+  index: number;
+  total: number;
+  isDragging: boolean;
+  isDragOver: boolean;
+  onDragStart: () => void;
+  onDragEnter: () => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
 }) {
   const isImg = attachment.kind === "image" && attachment.dataUrl;
   return (
-    <div className="group relative inline-flex items-center gap-2 pl-1 pr-7 py-1 border border-border rounded-lg bg-muted/60 max-w-[220px]">
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        try {
+          e.dataTransfer.setData("text/plain", attachment.id);
+        } catch {
+          /* ignore */
+        }
+        onDragStart();
+      }}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onDrop();
+      }}
+      onDragEnd={onDragEnd}
+      aria-grabbed={isDragging}
+      aria-label={`Attachment ${index + 1} of ${total}: ${attachment.name}`}
+      className={
+        "group relative inline-flex items-center gap-1 pl-0.5 pr-7 py-1 border rounded-lg bg-muted/60 max-w-[240px] transition-all touch-none cursor-grab active:cursor-grabbing " +
+        (isDragging ? "opacity-40 border-foreground/40 " : "border-border ") +
+        (isDragOver ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background " : "")
+      }
+    >
+      {total > 1 && (
+        <span
+          className="hidden sm:inline-flex items-center justify-center size-5 text-muted-foreground group-hover:text-foreground"
+          aria-hidden
+        >
+          <GripVertical className="size-3.5" />
+        </span>
+      )}
+      <span className="inline-flex items-center justify-center size-4 rounded text-[10px] font-mono text-muted-foreground tabular-nums shrink-0">
+        {index + 1}
+      </span>
       {isImg ? (
         <img
           src={attachment.dataUrl!}
           alt={attachment.name}
           className="size-8 rounded object-cover shrink-0"
+          draggable={false}
         />
       ) : (
         <div className="size-8 rounded bg-background border border-border inline-flex items-center justify-center shrink-0 text-muted-foreground">
@@ -1072,9 +1132,40 @@ function PendingChip({
           {formatBytes(attachment.size)}
         </p>
       </div>
+      {total > 1 && (
+        <div className="sm:hidden flex flex-col -my-0.5 mr-0.5">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveLeft?.();
+            }}
+            disabled={!onMoveLeft}
+            className="size-4 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+            aria-label="Move earlier"
+          >
+            <span className="text-[10px] leading-none">▲</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveRight?.();
+            }}
+            disabled={!onMoveRight}
+            className="size-4 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+            aria-label="Move later"
+          >
+            <span className="text-[10px] leading-none">▼</span>
+          </button>
+        </div>
+      )}
       <button
         type="button"
-        onClick={onRemove}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
         className="absolute right-0.5 top-0.5 size-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-background"
         aria-label="Remove"
       >
