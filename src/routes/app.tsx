@@ -1,6 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowUp, Sparkles, Cpu, Database, Box } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUp,
+  Sparkles,
+  Cpu,
+  Database,
+  Box,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { Logo } from "../components/site/Logo";
 
 export const Route = createFileRoute("/app")({
@@ -17,14 +26,17 @@ export const Route = createFileRoute("/app")({
   }),
 });
 
-type Role = "user" | "agent";
+type Role = "user" | "agent" | "system";
 type Step = { kind: "reason" | "tool" | "memory"; label: string };
 type Message = {
   id: string;
   role: Role;
   content: string;
   steps?: Step[];
+  interrupted?: boolean;
 };
+
+const STORAGE_KEY = "discoverse.chat.v1";
 
 const SUGGESTIONS = [
   "Research the latest in autonomous agents and summarize",
@@ -33,34 +45,84 @@ const SUGGESTIONS = [
   "Plan a 3-step automation for daily reports",
 ];
 
+const WELCOME: Message = {
+  id: "welcome",
+  role: "agent",
+  content:
+    "I'm Discoverse — an autonomous agent. Tell me an objective and I'll plan, execute in a sandbox, and remember it.",
+};
+
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function simulateAgent(prompt: string): { steps: Step[]; reply: string } {
-  const steps: Step[] = [
+function planSteps(): Step[] {
+  return [
     { kind: "reason", label: "OpenClaw · planning task graph" },
     { kind: "memory", label: "Weaviate · retrieving long-term context" },
     { kind: "tool", label: "E2B · executing sandboxed step" },
     { kind: "reason", label: "OpenClaw · synthesizing result" },
   ];
-  const reply = `I planned a 4-step trace for: "${prompt}".\n\nThe sandbox executed cleanly and I stored the new context as an episodic memory. Ask a follow-up to refine, or push this trace to a recurring workflow.`;
-  return { steps, reply };
+}
+
+function loadMessages(): Message[] {
+  if (typeof window === "undefined") return [WELCOME];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [WELCOME];
+    const parsed = JSON.parse(raw) as Message[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return [WELCOME];
+    return parsed;
+  } catch {
+    return [WELCOME];
+  }
+}
+
+// Cancellable delay that rejects when the signal aborts.
+function wait(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(new DOMException("Aborted", "AbortError"));
+    const t = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function AgentApp() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: uid(),
-      role: "agent",
-      content:
-        "I'm Discoverse — an autonomous agent. Tell me an objective and I'll plan, execute in a sandbox, and remember it.",
-    },
-  ]);
+  const [hydrated, setHydrated] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeSteps, setActiveSteps] = useState<Step[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Hydrate from localStorage after mount (SSR-safe).
+  useEffect(() => {
+    setMessages(loadMessages());
+    setHydrated(true);
+  }, []);
+
+  // Persist on change (only after hydration to avoid clobbering).
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {
+      /* quota or privacy mode — ignore */
+    }
+  }, [messages, hydrated]);
+
+  // Stop any in-flight run when the route unmounts.
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -68,6 +130,16 @@ function AgentApp() {
       behavior: "smooth",
     });
   }, [messages, activeSteps]);
+
+  function stop() {
+    abortRef.current?.abort();
+  }
+
+  function clearChat() {
+    abortRef.current?.abort();
+    setMessages([WELCOME]);
+    setActiveSteps([]);
+  }
 
   async function send(text: string) {
     const trimmed = text.trim();
@@ -77,25 +149,73 @@ function AgentApp() {
     setInput("");
     setBusy(true);
 
-    const { steps, reply } = simulateAgent(trimmed);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
+
+    const steps = planSteps();
+    const completed: Step[] = [];
     setActiveSteps([]);
-    for (let i = 0; i < steps.length; i++) {
-      await new Promise((r) => setTimeout(r, 550));
-      setActiveSteps((prev) => [...prev, steps[i]]);
+
+    try {
+      for (const step of steps) {
+        await wait(650, signal);
+        completed.push(step);
+        setActiveSteps([...completed]);
+      }
+      await wait(400, signal);
+      setMessages((m) => [
+        ...m,
+        {
+          id: uid(),
+          role: "agent",
+          content: `I planned a ${steps.length}-step trace for: "${trimmed}".\n\nThe sandbox executed cleanly and I stored the new context as an episodic memory. Ask a follow-up to refine, or push this trace to a recurring workflow.`,
+          steps,
+        },
+      ]);
+    } catch (err) {
+      if ((err as DOMException)?.name === "AbortError") {
+        setMessages((m) => [
+          ...m,
+          {
+            id: uid(),
+            role: "agent",
+            content:
+              completed.length === 0
+                ? "Run stopped before the agent began executing."
+                : `Run stopped after ${completed.length} of ${steps.length} steps. Partial trace preserved below.`,
+            steps: completed.length > 0 ? completed : undefined,
+            interrupted: true,
+          },
+        ]);
+      } else {
+        setMessages((m) => [
+          ...m,
+          {
+            id: uid(),
+            role: "agent",
+            content: "The agent encountered an unexpected error. Try again.",
+            interrupted: true,
+          },
+        ]);
+      }
+    } finally {
+      setActiveSteps([]);
+      setBusy(false);
+      abortRef.current = null;
     }
-    await new Promise((r) => setTimeout(r, 400));
-    setMessages((m) => [
-      ...m,
-      { id: uid(), role: "agent", content: reply, steps },
-    ]);
-    setActiveSteps([]);
-    setBusy(false);
   }
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) {
+      stop();
+      return;
+    }
     send(input);
   }
+
+  const hasHistory = messages.length > 1;
 
   return (
     <div className="min-h-dvh flex flex-col bg-background text-foreground">
@@ -114,9 +234,28 @@ function AgentApp() {
               Discoverse <span className="text-muted-foreground">Agent</span>
             </span>
           </div>
-          <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-foreground animate-pulse" />
-            Live
+          <div className="flex items-center gap-2">
+            {hasHistory && (
+              <button
+                onClick={clearChat}
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-md hover:bg-muted"
+                aria-label="Clear chat"
+              >
+                <Trash2 className="size-3.5" />
+                <span className="hidden sm:inline">Clear</span>
+              </button>
+            )}
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+              <span
+                className={
+                  "size-1.5 rounded-full " +
+                  (busy
+                    ? "bg-foreground animate-pulse"
+                    : "bg-foreground/40")
+                }
+              />
+              {busy ? "Running" : "Idle"}
+            </div>
           </div>
         </div>
       </header>
@@ -131,7 +270,7 @@ function AgentApp() {
             <TraceCard steps={activeSteps} live />
           )}
 
-          {messages.length === 1 && !busy && (
+          {!hasHistory && !busy && (
             <div className="pt-4">
               <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-3">
                 Try a directive
@@ -164,24 +303,42 @@ function AgentApp() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  send(input);
+                  if (busy) stop();
+                  else send(input);
                 }
               }}
-              placeholder="Give the agent an objective…"
+              placeholder={
+                busy ? "Agent is running… press stop to interrupt" : "Give the agent an objective…"
+              }
               rows={1}
-              className="flex-1 resize-none bg-transparent px-4 py-3.5 text-[15px] outline-none placeholder:text-muted-foreground max-h-40"
+              disabled={busy}
+              className="flex-1 resize-none bg-transparent px-4 py-3.5 text-[15px] outline-none placeholder:text-muted-foreground max-h-40 disabled:opacity-60"
             />
-            <button
-              type="submit"
-              disabled={!input.trim() || busy}
-              className="m-1.5 inline-flex items-center justify-center size-10 rounded-xl bg-foreground text-background disabled:opacity-30 transition-opacity"
-              aria-label="Send"
-            >
-              <ArrowUp className="size-4" />
-            </button>
+            {busy ? (
+              <button
+                type="button"
+                onClick={stop}
+                className="m-1.5 inline-flex items-center justify-center size-10 rounded-xl bg-foreground text-background hover:opacity-90 transition-opacity"
+                aria-label="Stop agent"
+                title="Stop agent"
+              >
+                <Square className="size-4 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="m-1.5 inline-flex items-center justify-center size-10 rounded-xl bg-foreground text-background disabled:opacity-30 transition-opacity"
+                aria-label="Send"
+              >
+                <ArrowUp className="size-4" />
+              </button>
+            )}
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground text-center">
-            Demo agent · Connect OpenClaw, E2B & Weaviate to go live.
+            {busy
+              ? "Click stop to abort the run mid-execution."
+              : "Demo agent · Connect OpenClaw, E2B & Weaviate to go live."}
           </p>
         </form>
       </div>
@@ -198,6 +355,11 @@ function MessageBubble({ message }: { message: Message }) {
           <div className="flex items-center gap-2 mb-2 text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
             <Sparkles className="size-3" />
             Agent
+            {message.interrupted && (
+              <span className="inline-flex items-center gap-1 text-foreground/70">
+                · stopped
+              </span>
+            )}
           </div>
         )}
         <div
@@ -209,7 +371,13 @@ function MessageBubble({ message }: { message: Message }) {
         >
           {message.content}
         </div>
-        {message.steps && <TraceCard steps={message.steps} className="mt-3" />}
+        {message.steps && (
+          <TraceCard
+            steps={message.steps}
+            interrupted={message.interrupted}
+            className="mt-3"
+          />
+        )}
       </div>
     </div>
   );
@@ -218,10 +386,12 @@ function MessageBubble({ message }: { message: Message }) {
 function TraceCard({
   steps,
   live,
+  interrupted,
   className = "",
 }: {
   steps: Step[];
   live?: boolean;
+  interrupted?: boolean;
   className?: string;
 }) {
   return (
@@ -239,6 +409,12 @@ function TraceCard({
           <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
             <span className="size-1.5 rounded-full bg-foreground animate-pulse" />
             running
+          </span>
+        )}
+        {interrupted && (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-foreground/50" />
+            stopped
           </span>
         )}
       </div>
