@@ -553,6 +553,14 @@ function AgentApp() {
     send(input);
   }
 
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-background text-muted-foreground">
+        <Loader2 className="size-5 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-dvh flex bg-background text-foreground">
       {/* Mobile drawer overlay */}
