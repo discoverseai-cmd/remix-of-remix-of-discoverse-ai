@@ -96,7 +96,15 @@ type Session = {
   title: string;
   messages: Message[];
   updatedAt: number;
+  /** Per-session model preference. "auto" lets the app pick the best model for each prompt. */
+  model: ModelChoice;
 };
+type ModelChoice =
+  | "auto"
+  | "google/gemini-2.5-pro"
+  | "google/gemini-2.5-flash"
+  | "openai/gpt-5"
+  | "openai/gpt-5-mini";
 type Store = {
   sessions: Session[];
   activeId: string;
