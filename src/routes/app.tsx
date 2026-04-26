@@ -220,7 +220,7 @@ function newSession(): Session {
     title: "New chat",
     messages: [WELCOME],
     updatedAt: Date.now(),
-    model: DEFAULT_MODEL,
+    model: DEFAULT_MODE,
   };
 }
 
@@ -469,7 +469,7 @@ function AgentApp() {
           title: s.title,
           messages: byId[s.id]?.length ? byId[s.id] : [WELCOME],
           updatedAt: new Date(s.updated_at).getTime(),
-          model: ((s as { model?: string | null }).model as ModelChoice | null) ?? DEFAULT_MODEL,
+          model: ((s as { model?: string | null }).model as ModeChoice | null) ?? DEFAULT_MODE,
         }));
         setStore({ sessions, activeId: sessions[0].id });
       } else {
@@ -489,8 +489,8 @@ function AgentApp() {
               messages: [WELCOME],
               updatedAt: new Date(created.updated_at).getTime(),
               model:
-                ((created as { model?: string | null }).model as ModelChoice | null) ??
-                DEFAULT_MODEL,
+                ((created as { model?: string | null }).model as ModeChoice | null) ??
+                DEFAULT_MODE,
             },
           ],
           activeId: created.id,
@@ -637,7 +637,7 @@ function AgentApp() {
       title: created.title,
       messages: [WELCOME],
       updatedAt: new Date(created.updated_at).getTime(),
-      model: DEFAULT_MODEL,
+      model: DEFAULT_MODE,
     };
     setStore((prev) => ({
       sessions: [s, ...prev.sessions],
@@ -672,7 +672,7 @@ function AgentApp() {
                 title: data.title,
                 messages: [WELCOME],
                 updatedAt: new Date(data.updated_at).getTime(),
-                model: DEFAULT_MODEL,
+                model: DEFAULT_MODE,
               };
               setStore({ sessions: [s], activeId: s.id });
             });
@@ -690,7 +690,7 @@ function AgentApp() {
     });
   }
 
-  function setSessionModel(sessionId: string, model: ModelChoice) {
+  function setSessionModel(sessionId: string, model: ModeChoice) {
     setStore((prev) => ({
       ...prev,
       sessions: prev.sessions.map((s) =>
@@ -915,8 +915,8 @@ function AgentApp() {
       });
     };
 
-    const sessionModel = activeSession?.model ?? DEFAULT_MODEL;
-    const resolvedModel: Exclude<ModelChoice, "auto"> =
+    const sessionModel = activeSession?.model ?? DEFAULT_MODE;
+    const resolvedModel: Exclude<ModeChoice, "auto"> =
       sessionModel === "auto" ? autoPickModel(trimmed, attachments) : sessionModel;
     const modelEventDetail =
       sessionModel === "auto"
@@ -2354,8 +2354,8 @@ function ModelPicker({
   onChange,
   disabled,
 }: {
-  value: ModelChoice;
-  onChange: (m: ModelChoice) => void;
+  value: ModeChoice;
+  onChange: (m: ModeChoice) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
