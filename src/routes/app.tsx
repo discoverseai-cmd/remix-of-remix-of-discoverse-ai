@@ -315,7 +315,7 @@ function AgentApp() {
         const ids = sessRows.map((s) => s.id);
         const { data: msgRows } = await supabase
           .from("chat_messages")
-          .select("id, session_id, role, content, attachments, steps, interrupted, created_at")
+          .select("id, session_id, role, content, attachments, steps, interrupted, timeline, stop_reason, created_at")
           .in("session_id", ids)
           .order("created_at", { ascending: true });
         if (cancelled) return;
@@ -328,6 +328,14 @@ function AgentApp() {
             attachments: (row.attachments as Attachment[] | null) ?? undefined,
             steps: (row.steps as Step[] | null) ?? undefined,
             interrupted: row.interrupted ?? undefined,
+            timeline:
+              ((row as { timeline?: TimelineEvent[] | null }).timeline as
+                | TimelineEvent[]
+                | null) ?? undefined,
+            stopReason:
+              ((row as { stop_reason?: string | null }).stop_reason as
+                | string
+                | null) ?? undefined,
           });
         }
         const sessions: Session[] = sessRows.map((s) => ({
