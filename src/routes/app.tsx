@@ -676,8 +676,8 @@ function AgentApp() {
       );
     }
 
-    // Persist user message + maybe-updated title to DB (fire and forget)
-    void supabase.from("chat_messages").insert({
+    // Persist user message + maybe-updated title to DB before the run starts.
+    const { error: userMsgError } = await supabase.from("chat_messages").insert({
       id: userMsgId,
       session_id: sessionId,
       user_id: user.id,
@@ -685,20 +685,28 @@ function AgentApp() {
       content: trimmed,
       attachments: attachments.length ? attachments.map(serializeAttachment) : null,
     });
+    if (userMsgError) {
+      console.error("Failed to save user message", userMsgError);
+      setBusy(false);
+      setAttachError("Could not save this message. Please try again.");
+      return;
+    }
     const newTitle =
       activeSession?.title === "New chat"
         ? deriveTitle([...(activeSession?.messages ?? []), userMsg])
         : null;
     if (newTitle) {
-      void supabase
+      const { error: titleError } = await supabase
         .from("chat_sessions")
         .update({ title: newTitle, updated_at: new Date().toISOString() })
         .eq("id", sessionId);
+      if (titleError) console.error("Failed to update chat title", titleError);
     } else {
-      void supabase
+      const { error: touchError } = await supabase
         .from("chat_sessions")
         .update({ updated_at: new Date().toISOString() })
         .eq("id", sessionId);
+      if (touchError) console.error("Failed to update chat timestamp", touchError);
     }
 
     const controller = new AbortController();
