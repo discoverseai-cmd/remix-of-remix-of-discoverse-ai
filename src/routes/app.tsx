@@ -2275,8 +2275,10 @@ function AssistantMarkdown({
               {children}
             </blockquote>
           ),
-          code: ({ inline, className, children, ...props }: any) => {
-            if (inline) {
+          code: ({ className, children, ...props }: any) => {
+            const text = String(children ?? "");
+            const isBlock = /language-/.test(className || "") || text.includes("\n");
+            if (!isBlock) {
               return (
                 <code
                   className="px-1 py-0.5 rounded bg-muted text-[0.9em] font-mono"
