@@ -98,15 +98,15 @@ type Session = {
   title: string;
   messages: Message[];
   updatedAt: number;
-  /** Per-session model preference. "auto" lets the app pick the best model for each prompt. */
-  model: ModelChoice;
+  /**
+   * Discoverse mode for this chat.
+   *  - "park"    → free tier. Auto-routes to fast/low-cost models. Default.
+   *  - "museum"  → premium tier. Auto-routes to mid/high-quality models.
+   * The actual underlying model is chosen by the router and never exposed in UI.
+   */
+  model: ModeChoice;
 };
-type ModelChoice =
-  | "auto"
-  | "google/gemini-2.5-pro"
-  | "google/gemini-2.5-flash"
-  | "openai/gpt-5"
-  | "openai/gpt-5-mini";
+type ModeChoice = "park" | "museum";
 type Store = {
   sessions: Session[];
   activeId: string;
@@ -117,46 +117,62 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour signed URLs
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
 const MAX_FILES_PER_MESSAGE = 10;
 const CHAT_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
-const DEFAULT_MODEL: ModelChoice = "auto";
+const DEFAULT_MODE: ModeChoice = "park";
 
-type ModelOption = {
-  value: ModelChoice;
+type ModeOption = {
+  value: ModeChoice;
   label: string;
+  tagline: string;
   hint: string;
+  badge: string;
 };
 
-const MODEL_OPTIONS: ModelOption[] = [
-  { value: "auto", label: "Auto", hint: "Pick best model per prompt" },
-  { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", hint: "Long context · research · vision" },
-  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", hint: "Fast multimodal · balanced" },
-  { value: "openai/gpt-5", label: "GPT-5", hint: "Top reasoning · coding" },
-  { value: "openai/gpt-5-mini", label: "GPT-5 Mini", hint: "Quick coding · low cost" },
+const MODE_OPTIONS: ModeOption[] = [
+  {
+    value: "park",
+    label: "Discoverse Park",
+    tagline: "Free · default",
+    hint: "Quick, lightweight responses for everyday chats.",
+    badge: "Free",
+  },
+  {
+    value: "museum",
+    label: "Discoverse Museum",
+    tagline: "Premium · upgrade",
+    hint: "Higher-quality reasoning, longer context, deeper craft.",
+    badge: "Pro",
+  },
 ];
 
-const MODEL_LABEL: Record<ModelChoice, string> = MODEL_OPTIONS.reduce(
+const MODE_LABEL: Record<ModeChoice, string> = MODE_OPTIONS.reduce(
   (acc, o) => ({ ...acc, [o.value]: o.label }),
-  {} as Record<ModelChoice, string>,
+  {} as Record<ModeChoice, string>,
 );
 
 /**
- * Auto model router. Inspects the latest user message + attachments and
- * returns a concrete model id, never "auto".
- *  - Image attachments / "image" / "research" / very long prompts → Gemini Pro
- *  - Coding/quick/tool/short prompts → GPT-5 Mini
- *  - Default balance → Gemini Flash
+ * Internal mode router. Picks a concrete underlying model for a given
+ * Discoverse mode + the latest user prompt/attachments. The exact model id is
+ * never shown to the user — the UI only ever exposes "Park" or "Museum".
+ *
+ *  - park    → fast / low-cost models (flash-lite, mini)
+ *  - museum  → mid-to-high quality models (pro, gpt-5) with smart routing
+ *              based on prompt intent and attachments.
  */
-function autoPickModel(
+function coerceMode(value: unknown): ModeChoice {
+  return value === "museum" ? "museum" : "park";
+}
+
+function pickModelForMode(
+  mode: ModeChoice,
   prompt: string,
   attachments: { mime: string }[] | undefined,
-): Exclude<ModelChoice, "auto"> {
+): string {
   const text = prompt.toLowerCase();
   const hasImage = (attachments ?? []).some((a) => a.mime?.startsWith("image/"));
   const hasMedia = (attachments ?? []).some(
     (a) => a.mime?.startsWith("video/") || a.mime?.startsWith("audio/"),
   );
   const longPrompt = prompt.length > 1200;
-
-  const wantsImage = /\b(image|picture|photo|diagram|chart|screenshot|visual|render)\b/.test(text);
   const wantsResearch =
     /\b(research|deep dive|analy[sz]e|literature|paper|book|long|continuous|ongoing|summari[sz]e)\b/.test(
       text,
@@ -167,13 +183,21 @@ function autoPickModel(
     ) || /```/.test(prompt);
   const wantsQuick = /\b(quick|fast|tldr|short|one[- ]liner|brief)\b/.test(text);
 
-  if (hasImage || hasMedia || wantsImage || wantsResearch || longPrompt) {
+  if (mode === "park") {
+    // Free tier: keep it cheap and fast. Bump only when an image is attached
+    // (a vision-capable cheap model is required to actually see it).
+    if (hasImage || hasMedia) return "google/gemini-2.5-flash";
+    if (wantsQuick) return "google/gemini-2.5-flash-lite";
+    return "google/gemini-2.5-flash-lite";
+  }
+
+  // museum (premium): prioritise quality.
+  if (hasImage || hasMedia || wantsResearch || longPrompt) {
     return "google/gemini-2.5-pro";
   }
   if (wantsCode && wantsQuick) return "openai/gpt-5-mini";
   if (wantsCode) return "openai/gpt-5";
-  if (wantsQuick) return "google/gemini-2.5-flash";
-  return "google/gemini-2.5-flash";
+  return "google/gemini-2.5-pro";
 }
 
 const SUGGESTIONS = [
@@ -200,7 +224,7 @@ function newSession(): Session {
     title: "New chat",
     messages: [WELCOME],
     updatedAt: Date.now(),
-    model: DEFAULT_MODEL,
+    model: DEFAULT_MODE,
   };
 }
 
@@ -449,7 +473,7 @@ function AgentApp() {
           title: s.title,
           messages: byId[s.id]?.length ? byId[s.id] : [WELCOME],
           updatedAt: new Date(s.updated_at).getTime(),
-          model: ((s as { model?: string | null }).model as ModelChoice | null) ?? DEFAULT_MODEL,
+          model: coerceMode((s as { model?: string | null }).model),
         }));
         setStore({ sessions, activeId: sessions[0].id });
       } else {
@@ -468,9 +492,7 @@ function AgentApp() {
               title: created.title,
               messages: [WELCOME],
               updatedAt: new Date(created.updated_at).getTime(),
-              model:
-                ((created as { model?: string | null }).model as ModelChoice | null) ??
-                DEFAULT_MODEL,
+              model: coerceMode((created as { model?: string | null }).model),
             },
           ],
           activeId: created.id,
@@ -617,7 +639,7 @@ function AgentApp() {
       title: created.title,
       messages: [WELCOME],
       updatedAt: new Date(created.updated_at).getTime(),
-      model: DEFAULT_MODEL,
+      model: DEFAULT_MODE,
     };
     setStore((prev) => ({
       sessions: [s, ...prev.sessions],
@@ -652,7 +674,7 @@ function AgentApp() {
                 title: data.title,
                 messages: [WELCOME],
                 updatedAt: new Date(data.updated_at).getTime(),
-                model: DEFAULT_MODEL,
+                model: DEFAULT_MODE,
               };
               setStore({ sessions: [s], activeId: s.id });
             });
@@ -670,7 +692,7 @@ function AgentApp() {
     });
   }
 
-  function setSessionModel(sessionId: string, model: ModelChoice) {
+  function setSessionModel(sessionId: string, model: ModeChoice) {
     setStore((prev) => ({
       ...prev,
       sessions: prev.sessions.map((s) =>
@@ -895,16 +917,12 @@ function AgentApp() {
       });
     };
 
-    const sessionModel = activeSession?.model ?? DEFAULT_MODEL;
-    const resolvedModel: Exclude<ModelChoice, "auto"> =
-      sessionModel === "auto" ? autoPickModel(trimmed, attachments) : sessionModel;
-    const modelEventDetail =
-      sessionModel === "auto"
-        ? `auto → ${MODEL_LABEL[resolvedModel]}`
-        : MODEL_LABEL[resolvedModel];
+    const sessionMode = activeSession?.model ?? DEFAULT_MODE;
+    const resolvedModel = pickModelForMode(sessionMode, trimmed, attachments);
+    const modelEventDetail = MODE_LABEL[sessionMode];
 
     try {
-      pushEvent("request", "Request sent", `model ${modelEventDetail}`);
+      pushEvent("request", "Request sent", `${modelEventDetail}`);
       const resp = await fetch(CHAT_FN_URL, {
         method: "POST",
         signal,
@@ -2327,15 +2345,15 @@ function AssistantMarkdown({
   );
 }
 
-/* ========== ModelPicker ========== */
+/* ========== ModePicker ========== */
 
 function ModelPicker({
   value,
   onChange,
   disabled,
 }: {
-  value: ModelChoice;
-  onChange: (m: ModelChoice) => void;
+  value: ModeChoice;
+  onChange: (m: ModeChoice) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -2350,7 +2368,9 @@ function ModelPicker({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const current = MODEL_OPTIONS.find((o) => o.value === value) ?? MODEL_OPTIONS[0];
+  const current = MODE_OPTIONS.find((o) => o.value === value) ?? MODE_OPTIONS[0];
+  const isPremium = value === "museum";
+  const shortLabel = value === "museum" ? "Museum" : "Park";
 
   return (
     <div ref={ref} className="relative">
@@ -2358,21 +2378,28 @@ function ModelPicker({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-[12px] font-medium hover:bg-muted disabled:opacity-50 transition-colors"
-        title="Choose model for this chat"
+        className={
+          "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-colors disabled:opacity-50 " +
+          (isPremium
+            ? "border-foreground bg-foreground text-background hover:opacity-90"
+            : "border-border hover:bg-muted")
+        }
+        title="Choose Discoverse mode for this chat"
+        aria-label={`Discoverse mode: ${current.label}`}
       >
-        <Cpu className="size-3.5" />
+        <Sparkles className="size-3.5" />
         <span className="hidden sm:inline">{current.label}</span>
-        <span className="sm:hidden">{value === "auto" ? "Auto" : current.label.split(" ")[0]}</span>
+        <span className="sm:hidden">{shortLabel}</span>
         <ChevronDown className="size-3" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-1.5 w-64 rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
+        <div className="absolute right-0 mt-1.5 w-72 rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
           <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground border-b border-border">
-            Model for this chat
+            Discoverse mode
           </div>
-          {MODEL_OPTIONS.map((opt) => {
+          {MODE_OPTIONS.map((opt) => {
             const active = opt.value === value;
+            const premium = opt.value === "museum";
             return (
               <button
                 key={opt.value}
@@ -2382,24 +2409,44 @@ function ModelPicker({
                   setOpen(false);
                 }}
                 className={
-                  "w-full text-left px-3 py-2 hover:bg-muted transition-colors flex items-start gap-2 " +
+                  "w-full text-left px-3 py-3 hover:bg-muted transition-colors flex items-start gap-2 border-b border-border last:border-b-0 " +
                   (active ? "bg-muted/60" : "")
                 }
               >
                 <Check
                   className={
-                    "size-3.5 mt-0.5 shrink-0 " + (active ? "opacity-100" : "opacity-0")
+                    "size-3.5 mt-1 shrink-0 " + (active ? "opacity-100" : "opacity-0")
                   }
                 />
-                <div className="min-w-0">
-                  <div className="text-[13px] font-medium leading-tight">{opt.label}</div>
-                  <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="text-[13px] font-semibold leading-tight">
+                      {opt.label}
+                    </div>
+                    <span
+                      className={
+                        "text-[10px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded " +
+                        (premium
+                          ? "bg-foreground text-background"
+                          : "bg-muted text-muted-foreground")
+                      }
+                    >
+                      {opt.badge}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground leading-snug mt-1">
+                    {opt.tagline}
+                  </div>
+                  <div className="text-[12px] text-foreground/80 leading-snug mt-1.5">
                     {opt.hint}
                   </div>
                 </div>
               </button>
             );
           })}
+          <div className="px-3 py-2 text-[10px] text-muted-foreground border-t border-border bg-muted/30">
+            Discoverse picks the best engine inside each mode automatically.
+          </div>
         </div>
       )}
     </div>
