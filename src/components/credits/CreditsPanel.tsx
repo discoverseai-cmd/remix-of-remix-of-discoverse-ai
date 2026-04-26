@@ -118,7 +118,7 @@ export function CreditsPanel() {
               {credits.balance.toLocaleString()}
             </div>
             <div className="text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
-              of {cap.toLocaleString()} {isMuseum ? "/ month" : "/ day"}
+              credits left
             </div>
           </div>
         </div>
@@ -148,17 +148,26 @@ export function CreditsPanel() {
         </div>
       </div>
 
-      {/* How costs work */}
+      {/* How costs work — token-based, no fixed-rate tables */}
       <div className="border border-border rounded-2xl p-4 sm:p-5">
         <h3 className="text-sm font-semibold tracking-tight mb-2">How credits are charged</h3>
         <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-4">
-          <li>You see an <span className="text-foreground/80">estimated</span> cost before you send each message.</li>
-          <li>The <span className="text-foreground/80">final</span> charge is computed from real token usage when the response finishes.</li>
           <li>
-            <span className="text-foreground/80">Park</span>: greetings ~1, short ~2, medium ~5, complex up to 20.
+            Before sending, we show an <span className="text-foreground/80">estimated</span> cost
+            based on the size of your prompt.
           </li>
           <li>
-            <span className="text-foreground/80">Museum</span>: greetings free, short ~5, medium ~25, complex up to 100.
+            When the response finishes, the final charge is computed from the{" "}
+            <span className="text-foreground/80">real token usage</span> reported by the model
+            — never a fixed per-message price.
+          </li>
+          <li>
+            Short outputs cost less, long or complex outputs cost more. Greetings stay free
+            on Museum.
+          </li>
+          <li>
+            If your estimate exceeds your balance, sending is blocked until you redeem more
+            credits or wait for your next reset.
           </li>
         </ul>
       </div>
@@ -172,7 +181,8 @@ export function CreditsPanel() {
               Unlock Discoverse Museum
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              10,000 credits/month · best output · greetings free.
+              Premium output, longer context, greetings free. Charged from real token
+              usage — never a fixed per-message rate.
             </p>
           </div>
           <form onSubmit={onRedeem} className="flex gap-2">
