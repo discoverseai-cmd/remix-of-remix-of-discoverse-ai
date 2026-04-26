@@ -2345,7 +2345,7 @@ function AssistantMarkdown({
   );
 }
 
-/* ========== ModelPicker ========== */
+/* ========== ModePicker ========== */
 
 function ModelPicker({
   value,
@@ -2368,7 +2368,9 @@ function ModelPicker({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const current = MODEL_OPTIONS.find((o) => o.value === value) ?? MODEL_OPTIONS[0];
+  const current = MODE_OPTIONS.find((o) => o.value === value) ?? MODE_OPTIONS[0];
+  const isPremium = value === "museum";
+  const shortLabel = value === "museum" ? "Museum" : "Park";
 
   return (
     <div ref={ref} className="relative">
@@ -2376,21 +2378,28 @@ function ModelPicker({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-[12px] font-medium hover:bg-muted disabled:opacity-50 transition-colors"
-        title="Choose model for this chat"
+        className={
+          "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-colors disabled:opacity-50 " +
+          (isPremium
+            ? "border-foreground bg-foreground text-background hover:opacity-90"
+            : "border-border hover:bg-muted")
+        }
+        title="Choose Discoverse mode for this chat"
+        aria-label={`Discoverse mode: ${current.label}`}
       >
-        <Cpu className="size-3.5" />
+        <Sparkles className="size-3.5" />
         <span className="hidden sm:inline">{current.label}</span>
-        <span className="sm:hidden">{value === "auto" ? "Auto" : current.label.split(" ")[0]}</span>
+        <span className="sm:hidden">{shortLabel}</span>
         <ChevronDown className="size-3" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-1.5 w-64 rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
+        <div className="absolute right-0 mt-1.5 w-72 rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
           <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground border-b border-border">
-            Model for this chat
+            Discoverse mode
           </div>
-          {MODEL_OPTIONS.map((opt) => {
+          {MODE_OPTIONS.map((opt) => {
             const active = opt.value === value;
+            const premium = opt.value === "museum";
             return (
               <button
                 key={opt.value}
@@ -2400,24 +2409,44 @@ function ModelPicker({
                   setOpen(false);
                 }}
                 className={
-                  "w-full text-left px-3 py-2 hover:bg-muted transition-colors flex items-start gap-2 " +
+                  "w-full text-left px-3 py-3 hover:bg-muted transition-colors flex items-start gap-2 border-b border-border last:border-b-0 " +
                   (active ? "bg-muted/60" : "")
                 }
               >
                 <Check
                   className={
-                    "size-3.5 mt-0.5 shrink-0 " + (active ? "opacity-100" : "opacity-0")
+                    "size-3.5 mt-1 shrink-0 " + (active ? "opacity-100" : "opacity-0")
                   }
                 />
-                <div className="min-w-0">
-                  <div className="text-[13px] font-medium leading-tight">{opt.label}</div>
-                  <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="text-[13px] font-semibold leading-tight">
+                      {opt.label}
+                    </div>
+                    <span
+                      className={
+                        "text-[10px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded " +
+                        (premium
+                          ? "bg-foreground text-background"
+                          : "bg-muted text-muted-foreground")
+                      }
+                    >
+                      {opt.badge}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground leading-snug mt-1">
+                    {opt.tagline}
+                  </div>
+                  <div className="text-[12px] text-foreground/80 leading-snug mt-1.5">
                     {opt.hint}
                   </div>
                 </div>
               </button>
             );
           })}
+          <div className="px-3 py-2 text-[10px] text-muted-foreground border-t border-border bg-muted/30">
+            Discoverse picks the best engine inside each mode automatically.
+          </div>
         </div>
       )}
     </div>
