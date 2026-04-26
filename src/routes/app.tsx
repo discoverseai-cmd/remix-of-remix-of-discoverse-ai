@@ -373,10 +373,41 @@ function AgentApp() {
     abortRef.current?.abort();
   }
 
+  async function addFiles(files: FileList | File[]) {
+    setAttachError(null);
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    const slotsLeft = MAX_FILES_PER_MESSAGE - pending.length;
+    if (slotsLeft <= 0) {
+      setAttachError(`Max ${MAX_FILES_PER_MESSAGE} files per message.`);
+      return;
+    }
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    for (const f of arr.slice(0, slotsLeft)) {
+      if (f.size > MAX_FILE_BYTES) rejected.push(`${f.name} (>20MB)`);
+      else accepted.push(f);
+    }
+    if (arr.length > slotsLeft) rejected.push(`${arr.length - slotsLeft} extra file(s)`);
+    const built = await Promise.all(accepted.map(fileToAttachment));
+    setPending((prev) => [...prev, ...built]);
+    if (rejected.length) setAttachError(`Skipped: ${rejected.join(", ")}`);
+  }
+
+  function removePending(id: string) {
+    setPending((prev) => prev.filter((a) => a.id !== id));
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
-    const userMsg: Message = { id: uid(), role: "user", content: trimmed };
+    if ((!trimmed && pending.length === 0) || busy) return;
+    const attachments = pending;
+    const userMsg: Message = {
+      id: uid(),
+      role: "user",
+      content: trimmed,
+      attachments: attachments.length ? attachments : undefined,
+    };
     const sessionId = store.activeId;
 
     updateActiveSession((s) => {
@@ -392,6 +423,8 @@ function AgentApp() {
       };
     });
     setInput("");
+    setPending([]);
+    setAttachError(null);
     setBusy(true);
 
     const controller = new AbortController();
@@ -427,10 +460,14 @@ function AgentApp() {
         setActiveSteps([...completed]);
       }
       await wait(400, signal);
+      const ackPrompt = trimmed || `${attachments.length} attached file${attachments.length === 1 ? "" : "s"}`;
+      const fileNote = attachments.length
+        ? `\n\nReceived ${attachments.length} attachment${attachments.length === 1 ? "" : "s"} (${attachments.map((a) => a.name).join(", ")}). They are available for inspection in the sandbox.`
+        : "";
       appendIfActive({
         id: uid(),
         role: "agent",
-        content: `I planned a ${steps.length}-step trace for: "${trimmed}".\n\nThe sandbox executed cleanly and I stored the new context as an episodic memory. Ask a follow-up to refine, or push this trace to a recurring workflow.`,
+        content: `I planned a ${steps.length}-step trace for: "${ackPrompt}".\n\nThe sandbox executed cleanly and I stored the new context as an episodic memory.${fileNote}`,
         steps,
       });
     } catch (err) {
