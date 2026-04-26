@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Sparkles, X, KeyRound, Loader2, Check, AlertCircle } from "lucide-react";
-import type { Credits } from "../hooks/use-credits";
+import type { Credits } from "../../hooks/use-credits";
 
 export function CreditsBadge({
   credits,
