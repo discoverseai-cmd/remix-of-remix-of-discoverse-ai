@@ -31,6 +31,8 @@ import {
   ChevronRight,
   Activity,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Logo } from "../components/site/Logo";
 import { useAuth } from "../hooks/use-auth";
 import { supabase } from "../integrations/supabase/client";
@@ -96,7 +98,15 @@ type Session = {
   title: string;
   messages: Message[];
   updatedAt: number;
+  /** Per-session model preference. "auto" lets the app pick the best model for each prompt. */
+  model: ModelChoice;
 };
+type ModelChoice =
+  | "auto"
+  | "google/gemini-2.5-pro"
+  | "google/gemini-2.5-flash"
+  | "openai/gpt-5"
+  | "openai/gpt-5-mini";
 type Store = {
   sessions: Session[];
   activeId: string;
@@ -107,7 +117,64 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour signed URLs
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
 const MAX_FILES_PER_MESSAGE = 10;
 const CHAT_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
-const CHAT_MODEL = "google/gemini-2.5-flash";
+const DEFAULT_MODEL: ModelChoice = "auto";
+
+type ModelOption = {
+  value: ModelChoice;
+  label: string;
+  hint: string;
+};
+
+const MODEL_OPTIONS: ModelOption[] = [
+  { value: "auto", label: "Auto", hint: "Pick best model per prompt" },
+  { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", hint: "Long context · research · vision" },
+  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", hint: "Fast multimodal · balanced" },
+  { value: "openai/gpt-5", label: "GPT-5", hint: "Top reasoning · coding" },
+  { value: "openai/gpt-5-mini", label: "GPT-5 Mini", hint: "Quick coding · low cost" },
+];
+
+const MODEL_LABEL: Record<ModelChoice, string> = MODEL_OPTIONS.reduce(
+  (acc, o) => ({ ...acc, [o.value]: o.label }),
+  {} as Record<ModelChoice, string>,
+);
+
+/**
+ * Auto model router. Inspects the latest user message + attachments and
+ * returns a concrete model id, never "auto".
+ *  - Image attachments / "image" / "research" / very long prompts → Gemini Pro
+ *  - Coding/quick/tool/short prompts → GPT-5 Mini
+ *  - Default balance → Gemini Flash
+ */
+function autoPickModel(
+  prompt: string,
+  attachments: { mime: string }[] | undefined,
+): Exclude<ModelChoice, "auto"> {
+  const text = prompt.toLowerCase();
+  const hasImage = (attachments ?? []).some((a) => a.mime?.startsWith("image/"));
+  const hasMedia = (attachments ?? []).some(
+    (a) => a.mime?.startsWith("video/") || a.mime?.startsWith("audio/"),
+  );
+  const longPrompt = prompt.length > 1200;
+
+  const wantsImage = /\b(image|picture|photo|diagram|chart|screenshot|visual|render)\b/.test(text);
+  const wantsResearch =
+    /\b(research|deep dive|analy[sz]e|literature|paper|book|long|continuous|ongoing|summari[sz]e)\b/.test(
+      text,
+    );
+  const wantsCode =
+    /\b(code|bug|fix|refactor|stack trace|typescript|python|sql|regex|function|api|endpoint|compile|test)\b/.test(
+      text,
+    ) || /```/.test(prompt);
+  const wantsQuick = /\b(quick|fast|tldr|short|one[- ]liner|brief)\b/.test(text);
+
+  if (hasImage || hasMedia || wantsImage || wantsResearch || longPrompt) {
+    return "google/gemini-2.5-pro";
+  }
+  if (wantsCode && wantsQuick) return "openai/gpt-5-mini";
+  if (wantsCode) return "openai/gpt-5";
+  if (wantsQuick) return "google/gemini-2.5-flash";
+  return "google/gemini-2.5-flash";
+}
 
 const SUGGESTIONS = [
   "Research the latest in autonomous agents and summarize",
@@ -133,6 +200,7 @@ function newSession(): Session {
     title: "New chat",
     messages: [WELCOME],
     updatedAt: Date.now(),
+    model: DEFAULT_MODEL,
   };
 }
 
@@ -332,7 +400,7 @@ function AgentApp() {
       // Try DB first
       const { data: sessRows } = await supabase
         .from("chat_sessions")
-        .select("id, title, updated_at")
+        .select("id, title, updated_at, model")
         .order("updated_at", { ascending: false });
       if (cancelled) return;
       console.info(
@@ -381,6 +449,7 @@ function AgentApp() {
           title: s.title,
           messages: byId[s.id]?.length ? byId[s.id] : [WELCOME],
           updatedAt: new Date(s.updated_at).getTime(),
+          model: ((s as { model?: string | null }).model as ModelChoice | null) ?? DEFAULT_MODEL,
         }));
         setStore({ sessions, activeId: sessions[0].id });
       } else {
@@ -388,7 +457,7 @@ function AgentApp() {
         const { data: created } = await supabase
           .from("chat_sessions")
           .insert({ user_id: user.id, title: "New chat" })
-          .select("id, title, updated_at")
+          .select("id, title, updated_at, model")
           .single();
         if (cancelled || !created) return;
         console.info("[chat-audit] created bootstrap session", created.id);
@@ -399,6 +468,9 @@ function AgentApp() {
               title: created.title,
               messages: [WELCOME],
               updatedAt: new Date(created.updated_at).getTime(),
+              model:
+                ((created as { model?: string | null }).model as ModelChoice | null) ??
+                DEFAULT_MODEL,
             },
           ],
           activeId: created.id,
@@ -545,6 +617,7 @@ function AgentApp() {
       title: created.title,
       messages: [WELCOME],
       updatedAt: new Date(created.updated_at).getTime(),
+      model: DEFAULT_MODEL,
     };
     setStore((prev) => ({
       sessions: [s, ...prev.sessions],
@@ -579,6 +652,7 @@ function AgentApp() {
                 title: data.title,
                 messages: [WELCOME],
                 updatedAt: new Date(data.updated_at).getTime(),
+                model: DEFAULT_MODEL,
               };
               setStore({ sessions: [s], activeId: s.id });
             });
@@ -594,6 +668,23 @@ function AgentApp() {
       }
       return { sessions: remaining, activeId };
     });
+  }
+
+  function setSessionModel(sessionId: string, model: ModelChoice) {
+    setStore((prev) => ({
+      ...prev,
+      sessions: prev.sessions.map((s) =>
+        s.id === sessionId ? { ...s, model } : s,
+      ),
+    }));
+    void supabase
+      .from("chat_sessions")
+      .update({ model })
+      .eq("id", sessionId)
+      .then(({ error }) => {
+        if (error) console.error("[chat-audit] model update FAILED", sessionId, error);
+        else console.info("[chat-audit] model update ok", sessionId, model);
+      });
   }
 
   function stop() {
@@ -804,8 +895,16 @@ function AgentApp() {
       });
     };
 
+    const sessionModel = activeSession?.model ?? DEFAULT_MODEL;
+    const resolvedModel: Exclude<ModelChoice, "auto"> =
+      sessionModel === "auto" ? autoPickModel(trimmed, attachments) : sessionModel;
+    const modelEventDetail =
+      sessionModel === "auto"
+        ? `auto → ${MODEL_LABEL[resolvedModel]}`
+        : MODEL_LABEL[resolvedModel];
+
     try {
-      pushEvent("request", "Request sent", `model ${CHAT_MODEL}`);
+      pushEvent("request", "Request sent", `model ${modelEventDetail}`);
       const resp = await fetch(CHAT_FN_URL, {
         method: "POST",
         signal,
@@ -814,7 +913,7 @@ function AgentApp() {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          model: CHAT_MODEL,
+          model: resolvedModel,
           messages: convo.map((m) => ({
             role: m.role,
             content: m.content,
@@ -1231,35 +1330,47 @@ function AgentApp() {
                 {activeSession?.title ?? "New chat"}
               </span>
             </div>
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground shrink-0">
-              <span
-                className={
-                  "size-1.5 rounded-full " +
-                  (streamStatus === "streaming"
-                    ? "bg-emerald-500 animate-pulse"
-                    : streamStatus === "done"
-                    ? "bg-emerald-500"
-                    : busy
-                    ? "bg-foreground animate-pulse"
-                    : "bg-foreground/40")
-                }
-              />
-              {streamStatus === "streaming"
-                ? "Streaming…"
-                : streamStatus === "done"
-                ? "Done"
-                : busy
-                ? "Running"
-                : "Idle"}
+            <div className="flex items-center gap-2 shrink-0">
+              {activeSession && (
+                <ModelPicker
+                  value={activeSession.model}
+                  onChange={(m) => setSessionModel(activeSession.id, m)}
+                  disabled={busy}
+                />
+              )}
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                <span
+                  className={
+                    "size-1.5 rounded-full " +
+                    (streamStatus === "streaming"
+                      ? "bg-emerald-500 animate-pulse"
+                      : streamStatus === "done"
+                      ? "bg-emerald-500"
+                      : busy
+                      ? "bg-foreground animate-pulse"
+                      : "bg-foreground/40")
+                  }
+                />
+                {streamStatus === "streaming"
+                  ? "Streaming…"
+                  : streamStatus === "done"
+                  ? "Done"
+                  : busy
+                  ? "Running"
+                  : "Idle"}
+              </div>
             </div>
           </div>
         </header>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
+            {messages.map((m, i) => {
+              const isLast = i === messages.length - 1;
+              const isStreaming =
+                isLast && m.role === "agent" && streamStatus === "streaming";
+              return <MessageBubble key={m.id} message={m} streaming={isStreaming} />;
+            })}
 
             {busy && activeSteps.length > 0 && (
               <TraceCard steps={activeSteps} live />
@@ -1430,7 +1541,13 @@ function AgentApp() {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({
+  message,
+  streaming = false,
+}: {
+  message: Message;
+  streaming?: boolean;
+}) {
   const isUser = message.role === "user";
   const [timelineOpen, setTimelineOpen] = useState(false);
   return (
@@ -1450,16 +1567,14 @@ function MessageBubble({ message }: { message: Message }) {
         {message.attachments && message.attachments.length > 0 && (
           <AttachmentList attachments={message.attachments} alignEnd={isUser} className="mb-2" />
         )}
-        {message.content && (
-          <div
-            className={
-              isUser
-                ? "bg-foreground text-background rounded-2xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap"
-                : "text-[15px] leading-relaxed text-foreground whitespace-pre-wrap"
-            }
-          >
-            {message.content}
-          </div>
+        {(message.content || streaming) && (
+          isUser ? (
+            <div className="bg-foreground text-background rounded-2xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap">
+              {message.content}
+            </div>
+          ) : (
+            <AssistantMarkdown content={message.content} streaming={streaming} />
+          )
         )}
         {message.steps && (
           <TraceCard
@@ -2108,6 +2223,183 @@ function UserMenu({
             <LogOut className="size-3.5" />
             Sign out
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========== AssistantMarkdown ========== */
+
+function AssistantMarkdown({
+  content,
+  streaming,
+}: {
+  content: string;
+  streaming?: boolean;
+}) {
+  return (
+    <div className="text-[15px] leading-relaxed text-foreground assistant-prose">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+          h1: ({ children }) => (
+            <h1 className="text-xl font-semibold mt-4 mb-2">{children}</h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="text-lg font-semibold mt-4 mb-2">{children}</h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="text-base font-semibold mt-3 mb-2">{children}</h3>
+          ),
+          ul: ({ children }) => (
+            <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>
+          ),
+          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline underline-offset-2 hover:text-foreground/80"
+            >
+              {children}
+            </a>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-border pl-3 text-muted-foreground my-3">
+              {children}
+            </blockquote>
+          ),
+          code: ({ className, children, ...props }: any) => {
+            const text = String(children ?? "");
+            const isBlock = /language-/.test(className || "") || text.includes("\n");
+            if (!isBlock) {
+              return (
+                <code
+                  className="px-1 py-0.5 rounded bg-muted text-[0.9em] font-mono"
+                  {...props}
+                >
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => (
+            <pre className="my-3 rounded-lg bg-muted p-3 overflow-x-auto text-[13px] font-mono">
+              {children}
+            </pre>
+          ),
+          table: ({ children }) => (
+            <div className="my-3 overflow-x-auto">
+              <table className="w-full text-sm border-collapse">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th className="border border-border px-2 py-1 text-left font-medium bg-muted/40">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="border border-border px-2 py-1 align-top">{children}</td>
+          ),
+          hr: () => <hr className="my-4 border-border" />,
+        }}
+      >
+        {content || ""}
+      </ReactMarkdown>
+      {streaming && (
+        <span
+          aria-hidden
+          className="inline-block w-[2px] h-[1.05em] align-[-0.15em] bg-foreground/70 ml-0.5 animate-pulse"
+        />
+      )}
+    </div>
+  );
+}
+
+/* ========== ModelPicker ========== */
+
+function ModelPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ModelChoice;
+  onChange: (m: ModelChoice) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const current = MODEL_OPTIONS.find((o) => o.value === value) ?? MODEL_OPTIONS[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-[12px] font-medium hover:bg-muted disabled:opacity-50 transition-colors"
+        title="Choose model for this chat"
+      >
+        <Cpu className="size-3.5" />
+        <span className="hidden sm:inline">{current.label}</span>
+        <span className="sm:hidden">{value === "auto" ? "Auto" : current.label.split(" ")[0]}</span>
+        <ChevronDown className="size-3" />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1.5 w-64 rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
+          <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground border-b border-border">
+            Model for this chat
+          </div>
+          {MODEL_OPTIONS.map((opt) => {
+            const active = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                className={
+                  "w-full text-left px-3 py-2 hover:bg-muted transition-colors flex items-start gap-2 " +
+                  (active ? "bg-muted/60" : "")
+                }
+              >
+                <Check
+                  className={
+                    "size-3.5 mt-0.5 shrink-0 " + (active ? "opacity-100" : "opacity-0")
+                  }
+                />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium leading-tight">{opt.label}</div>
+                  <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                    {opt.hint}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
