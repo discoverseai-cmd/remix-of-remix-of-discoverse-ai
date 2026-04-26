@@ -1134,12 +1134,12 @@ function AttachmentCard({ attachment }: { attachment: Attachment }) {
     );
   }
 
-  return (
-    <div className="border border-border rounded-xl bg-background max-w-md inline-flex items-center gap-3 p-3">
+  const inner = (
+    <>
       <div className="size-10 rounded-md bg-muted inline-flex items-center justify-center text-muted-foreground shrink-0">
         {kindIcon(kind)}
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 text-left">
         <p className="text-sm font-medium truncate">{name}</p>
         <p className="text-[11px] font-mono text-muted-foreground">
           {formatBytes(size)} · {kind}
@@ -1147,17 +1147,23 @@ function AttachmentCard({ attachment }: { attachment: Attachment }) {
         </p>
       </div>
       {dataUrl && (
-        <a
-          href={dataUrl}
-          download={name}
-          className="size-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-          aria-label="Download"
-          title="Download"
-        >
-          <Download className="size-4" />
-        </a>
+        <Download className="size-4 text-muted-foreground shrink-0" aria-hidden />
       )}
-    </div>
+    </>
+  );
+  const cls =
+    "border border-border rounded-xl bg-background w-full max-w-md flex items-center gap-3 p-3 min-h-12 transition-colors";
+  return dataUrl ? (
+    <a
+      href={dataUrl}
+      download={name}
+      className={cls + " hover:bg-muted active:bg-muted"}
+      aria-label={`Download ${name}`}
+    >
+      {inner}
+    </a>
+  ) : (
+    <div className={cls + " opacity-90"}>{inner}</div>
   );
 }
 
