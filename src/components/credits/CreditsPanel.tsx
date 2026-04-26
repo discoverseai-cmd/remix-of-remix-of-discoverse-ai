@@ -118,7 +118,7 @@ export function CreditsPanel() {
               {credits.balance.toLocaleString()}
             </div>
             <div className="text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
-              of {cap.toLocaleString()} {isMuseum ? "/ month" : "/ day"}
+              credits left
             </div>
           </div>
         </div>
