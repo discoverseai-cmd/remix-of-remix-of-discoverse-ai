@@ -585,19 +585,22 @@ function AgentApp() {
 
   async function send(text: string) {
     const trimmed = text.trim();
-    // Combine current pending with reused-last attachments (dedup by id).
-    const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
-    const attachmentsRaw = [...pending, ...reused];
-    // Upload pending attachments to cloud storage; reused already have storagePath.
-    const attachments = await Promise.all(
-      attachmentsRaw.map((a) =>
-        a.storagePath ? Promise.resolve(a) : uploadAttachment(a, user!.id, store.activeId)
-      )
-    );
-    if ((!trimmed && attachments.length === 0) || busy) return;
+    if (busy) return;
     if (!user) return;
     const sessionId = store.activeId;
     if (!sessionId) return;
+    // Combine current pending with reused-last attachments (dedup by id).
+    const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
+    const attachmentsRaw = [...pending, ...reused];
+    if (!trimmed && attachmentsRaw.length === 0) return;
+    setBusy(true);
+    setStreamStatus("idle");
+    // Upload pending attachments to cloud storage; reused already have storagePath.
+    const attachments = await Promise.all(
+      attachmentsRaw.map((a) =>
+        a.storagePath ? Promise.resolve(a) : uploadAttachment(a, user.id, sessionId)
+      )
+    );
     const userMsgId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
