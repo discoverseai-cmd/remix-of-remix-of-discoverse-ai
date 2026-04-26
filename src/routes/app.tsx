@@ -387,7 +387,7 @@ async function hydrateAttachments(
 
 function AgentApp() {
   const navigate = useNavigate();
-  const { user, loading: authLoading, isReady } = useAuth();
+  const { session, user, loading: authLoading, isReady } = useAuth();
   useEffect(() => {
     if (isReady && !user) navigate({ to: "/auth" });
   }, [user, isReady, navigate]);
@@ -1039,14 +1039,20 @@ function AgentApp() {
     let agentRunChannel: ReturnType<typeof supabase.channel> | null = null;
     setLastSentBySession((prev) => ({ ...prev, [sessionId]: trimmed }));
     try {
-      const { runId } = await enqueueAgentRun({
+      const result = await enqueueAgentRun({
         data: {
+          accessToken: session?.access_token ?? "",
           sessionId,
           input: trimmed || "(no prompt — attachments only)",
           model: resolvedModel,
           messageId: userMsgId,
         },
       });
+      if (!result.ok) {
+        if (result.runId) setActiveRunId(result.runId);
+        throw new Error(result.error);
+      }
+      const { runId } = result;
       pushEvent("request", "Agent run queued", runId.slice(0, 8));
       setActiveRunId(runId);
       setActiveRunStatus("queued");
