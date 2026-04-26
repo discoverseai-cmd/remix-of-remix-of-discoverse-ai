@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 export function Hero() {
   return (
@@ -50,13 +51,13 @@ export function Hero() {
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <a
-              href="#deploy"
+            <Link
+              to="/app"
               className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-foreground text-background font-medium rounded-md hover:opacity-90 transition-all"
             >
-              Initialize System
+              Try the agent
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-            </a>
+            </Link>
             <a
               href="#engine"
               className="w-full sm:w-auto inline-flex items-center justify-center px-7 py-3.5 border border-border bg-background font-medium rounded-md hover:bg-muted transition-colors"
