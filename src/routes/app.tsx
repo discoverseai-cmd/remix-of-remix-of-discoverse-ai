@@ -446,16 +446,51 @@ function AgentApp() {
         </div>
 
         {!sidebarCollapsed && (
-          <div className="px-4 pt-2 pb-1">
+          <div className="px-3 pt-1 pb-2">
+            <div className="relative">
+              <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search chats…"
+                className="w-full pl-8 pr-7 py-2 text-sm bg-muted/50 border border-border rounded-md outline-none focus:border-foreground/40 focus:bg-background transition-colors placeholder:text-muted-foreground"
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 size-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-background"
+                  aria-label="Clear search"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!sidebarCollapsed && (
+          <div className="px-4 pb-1 flex items-center justify-between">
             <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-              Sessions
+              {query ? "Results" : "Sessions"}
             </p>
+            {query && (
+              <span className="text-[11px] font-mono text-muted-foreground">
+                {filteredSessions.length}
+              </span>
+            )}
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
-          {sortedSessions.map((s) => {
+          {filteredSessions.length === 0 && !sidebarCollapsed && (
+            <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+              No chats match "{query}".
+            </p>
+          )}
+          {filteredSessions.map((s) => {
             const active = s.id === store.activeId;
+            const isRenaming = renameId === s.id;
             return (
               <div
                 key={s.id}
@@ -466,33 +501,81 @@ function AgentApp() {
                     : "hover:bg-muted/60 text-muted-foreground hover:text-foreground")
                 }
               >
-                <button
-                  onClick={() => selectSession(s.id)}
-                  className={
-                    "w-full text-left flex items-center gap-2.5 text-sm " +
-                    (sidebarCollapsed
-                      ? "md:justify-center md:px-0 md:py-2.5 px-3 py-2.5"
-                      : "px-3 py-2.5 pr-9")
-                  }
-                  title={s.title}
-                >
-                  <MessageSquare className="size-3.5 shrink-0" />
-                  {!sidebarCollapsed && (
-                    <span className="truncate">{s.title}</span>
-                  )}
-                </button>
-                {!sidebarCollapsed && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteSession(s.id);
-                    }}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 size-7 inline-flex items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background hover:text-foreground transition-opacity"
-                    aria-label="Delete chat"
-                    title="Delete chat"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
+                {isRenaming && !sidebarCollapsed ? (
+                  <div className="flex items-center gap-1.5 px-2 py-1.5">
+                    <MessageSquare className="size-3.5 shrink-0 ml-1" />
+                    <input
+                      autoFocus
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitRename();
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          cancelRename();
+                        }
+                      }}
+                      onBlur={commitRename}
+                      className="flex-1 min-w-0 bg-background border border-foreground/30 rounded px-2 py-1 text-sm outline-none"
+                    />
+                    <button
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        commitRename();
+                      }}
+                      className="size-6 inline-flex items-center justify-center rounded text-foreground hover:bg-background"
+                      aria-label="Save title"
+                    >
+                      <Check className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => selectSession(s.id)}
+                      onDoubleClick={() => !sidebarCollapsed && beginRename(s)}
+                      className={
+                        "w-full text-left flex items-center gap-2.5 text-sm " +
+                        (sidebarCollapsed
+                          ? "md:justify-center md:px-0 md:py-2.5 px-3 py-2.5"
+                          : "px-3 py-2.5 pr-16")
+                      }
+                      title={sidebarCollapsed ? s.title : `${s.title} — double-click to rename`}
+                    >
+                      <MessageSquare className="size-3.5 shrink-0" />
+                      {!sidebarCollapsed && (
+                        <span className="truncate">{s.title}</span>
+                      )}
+                    </button>
+                    {!sidebarCollapsed && (
+                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            beginRename(s);
+                          }}
+                          className="size-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                          aria-label="Rename chat"
+                          title="Rename"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSession(s.id);
+                          }}
+                          className="size-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                          aria-label="Delete chat"
+                          title="Delete"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );
