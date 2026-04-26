@@ -26,6 +26,7 @@ import {
   GripVertical,
   LogOut,
   Loader2,
+  UserCog,
 } from "lucide-react";
 import { Logo } from "../components/site/Logo";
 import { useAuth } from "../hooks/use-auth";
