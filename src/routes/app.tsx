@@ -447,6 +447,7 @@ function AgentApp() {
           title: s.title,
           messages: byId[s.id]?.length ? byId[s.id] : [WELCOME],
           updatedAt: new Date(s.updated_at).getTime(),
+          model: ((s as { model?: string | null }).model as ModelChoice | null) ?? DEFAULT_MODEL,
         }));
         setStore({ sessions, activeId: sessions[0].id });
       } else {
@@ -454,7 +455,7 @@ function AgentApp() {
         const { data: created } = await supabase
           .from("chat_sessions")
           .insert({ user_id: user.id, title: "New chat" })
-          .select("id, title, updated_at")
+          .select("id, title, updated_at, model")
           .single();
         if (cancelled || !created) return;
         console.info("[chat-audit] created bootstrap session", created.id);
@@ -465,6 +466,9 @@ function AgentApp() {
               title: created.title,
               messages: [WELCOME],
               updatedAt: new Date(created.updated_at).getTime(),
+              model:
+                ((created as { model?: string | null }).model as ModelChoice | null) ??
+                DEFAULT_MODEL,
             },
           ],
           activeId: created.id,
