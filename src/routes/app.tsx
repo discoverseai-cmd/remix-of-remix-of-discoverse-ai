@@ -40,7 +40,10 @@ import { useCredits, costFromUsage, estimateCost, type Tier } from "../hooks/use
 import { CreditsBadge, UpgradeDialog } from "../components/credits/UpgradeDialog";
 import { Lock } from "lucide-react";
 import { enqueueAgentRun } from "../integrations/agent/enqueue-run.functions";
-import type { AgentStep as AgentStepRow } from "../hooks/use-agent-run";
+import { cancelAgentRun } from "../integrations/agent/cancel-run.functions";
+import type { AgentStep as AgentStepRow, AgentRun as AgentRunRow } from "../hooks/use-agent-run";
+import { RunsPanel } from "../components/agent/RunsPanel";
+import { RunControlPanel } from "../components/agent/RunControlPanel";
 
 export const Route = createFileRoute("/app")({
   component: AgentApp,
