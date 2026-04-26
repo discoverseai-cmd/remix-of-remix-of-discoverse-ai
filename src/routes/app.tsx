@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -23,8 +23,13 @@ import {
   FileAudio,
   File as FileIcon,
   Download,
+  GripVertical,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import { Logo } from "../components/site/Logo";
+import { useAuth } from "../hooks/use-auth";
+import { supabase } from "../integrations/supabase/client";
 
 export const Route = createFileRoute("/app")({
   component: AgentApp,
@@ -237,6 +242,12 @@ async function fileToAttachment(file: File): Promise<Attachment> {
 }
 
 function AgentApp() {
+  const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
+  useEffect(() => {
+    if (!authLoading && !user) navigate({ to: "/auth" });
+  }, [user, authLoading, navigate]);
+
   const [hydrated, setHydrated] = useState(false);
   const [store, setStore] = useState<Store>(() => {
     const s = newSession();
@@ -255,6 +266,8 @@ function AgentApp() {
   const [attachError, setAttachError] = useState<string | null>(null);
   const [lastSent, setLastSent] = useState<Attachment[]>([]);
   const [reuseLast, setReuseLast] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -415,6 +428,19 @@ function AgentApp() {
     setPending((prev) => prev.filter((a) => a.id !== id));
   }
 
+  function reorderPending(fromId: string, toId: string) {
+    if (fromId === toId) return;
+    setPending((prev) => {
+      const from = prev.findIndex((a) => a.id === fromId);
+      const to = prev.findIndex((a) => a.id === toId);
+      if (from < 0 || to < 0) return prev;
+      const next = prev.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
     // Combine current pending with reused-last attachments (dedup by id).
@@ -525,6 +551,14 @@ function AgentApp() {
       return;
     }
     send(input);
+  }
+
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-background text-muted-foreground">
+        <Loader2 className="size-5 animate-spin" />
+      </div>
+    );
   }
 
   return (
@@ -791,14 +825,17 @@ function AgentApp() {
                 {activeSession?.title ?? "New chat"}
               </span>
             </div>
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground shrink-0">
-              <span
-                className={
-                  "size-1.5 rounded-full " +
-                  (busy ? "bg-foreground animate-pulse" : "bg-foreground/40")
-                }
-              />
-              {busy ? "Running" : "Idle"}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                <span
+                  className={
+                    "size-1.5 rounded-full " +
+                    (busy ? "bg-foreground animate-pulse" : "bg-foreground/40")
+                  }
+                />
+                {busy ? "Running" : "Idle"}
+              </div>
+              <UserMenu email={user.email ?? ""} />
             </div>
           </div>
         </header>
@@ -850,10 +887,41 @@ function AgentApp() {
               }}
             />
             {pending.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-2">
-                {pending.map((a) => (
-                  <PendingChip key={a.id} attachment={a} onRemove={() => removePending(a.id)} />
-                ))}
+              <div className="mb-2">
+                <div className="flex flex-wrap gap-2">
+                  {pending.map((a, i) => (
+                    <PendingChip
+                      key={a.id}
+                      attachment={a}
+                      index={i}
+                      total={pending.length}
+                      isDragging={dragId === a.id}
+                      isDragOver={dragOverId === a.id && dragId !== a.id}
+                      onRemove={() => removePending(a.id)}
+                      onDragStart={() => setDragId(a.id)}
+                      onDragEnter={() => dragId && setDragOverId(a.id)}
+                      onDragOver={(e) => {
+                        if (dragId) e.preventDefault();
+                      }}
+                      onDrop={() => {
+                        if (dragId) reorderPending(dragId, a.id);
+                        setDragId(null);
+                        setDragOverId(null);
+                      }}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setDragOverId(null);
+                      }}
+                      onMoveLeft={i > 0 ? () => reorderPending(a.id, pending[i - 1].id) : undefined}
+                      onMoveRight={i < pending.length - 1 ? () => reorderPending(a.id, pending[i + 1].id) : undefined}
+                    />
+                  ))}
+                </div>
+                {pending.length > 1 && (
+                  <p className="mt-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    Drag to reorder · order matches what you'll send
+                  </p>
+                )}
               </div>
             )}
             {lastSent.length > 0 && !busy && (
@@ -991,18 +1059,78 @@ function kindIcon(kind: AttachmentKind) {
 function PendingChip({
   attachment,
   onRemove,
+  index,
+  total,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragEnter,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  onMoveLeft,
+  onMoveRight,
 }: {
   attachment: Attachment;
   onRemove: () => void;
+  index: number;
+  total: number;
+  isDragging: boolean;
+  isDragOver: boolean;
+  onDragStart: () => void;
+  onDragEnter: () => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
 }) {
   const isImg = attachment.kind === "image" && attachment.dataUrl;
   return (
-    <div className="group relative inline-flex items-center gap-2 pl-1 pr-7 py-1 border border-border rounded-lg bg-muted/60 max-w-[220px]">
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        try {
+          e.dataTransfer.setData("text/plain", attachment.id);
+        } catch {
+          /* ignore */
+        }
+        onDragStart();
+      }}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onDrop();
+      }}
+      onDragEnd={onDragEnd}
+      aria-grabbed={isDragging}
+      aria-label={`Attachment ${index + 1} of ${total}: ${attachment.name}`}
+      className={
+        "group relative inline-flex items-center gap-1 pl-0.5 pr-7 py-1 border rounded-lg bg-muted/60 max-w-[240px] transition-all touch-none cursor-grab active:cursor-grabbing " +
+        (isDragging ? "opacity-40 border-foreground/40 " : "border-border ") +
+        (isDragOver ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background " : "")
+      }
+    >
+      {total > 1 && (
+        <span
+          className="hidden sm:inline-flex items-center justify-center size-5 text-muted-foreground group-hover:text-foreground"
+          aria-hidden
+        >
+          <GripVertical className="size-3.5" />
+        </span>
+      )}
+      <span className="inline-flex items-center justify-center size-4 rounded text-[10px] font-mono text-muted-foreground tabular-nums shrink-0">
+        {index + 1}
+      </span>
       {isImg ? (
         <img
           src={attachment.dataUrl!}
           alt={attachment.name}
           className="size-8 rounded object-cover shrink-0"
+          draggable={false}
         />
       ) : (
         <div className="size-8 rounded bg-background border border-border inline-flex items-center justify-center shrink-0 text-muted-foreground">
@@ -1015,9 +1143,40 @@ function PendingChip({
           {formatBytes(attachment.size)}
         </p>
       </div>
+      {total > 1 && (
+        <div className="sm:hidden flex flex-col -my-0.5 mr-0.5">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveLeft?.();
+            }}
+            disabled={!onMoveLeft}
+            className="size-4 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+            aria-label="Move earlier"
+          >
+            <span className="text-[10px] leading-none">▲</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveRight?.();
+            }}
+            disabled={!onMoveRight}
+            className="size-4 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+            aria-label="Move later"
+          >
+            <span className="text-[10px] leading-none">▼</span>
+          </button>
+        </div>
+      )}
       <button
         type="button"
-        onClick={onRemove}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
         className="absolute right-0.5 top-0.5 size-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-background"
         aria-label="Remove"
       >
@@ -1246,6 +1405,54 @@ function TraceCard({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function UserMenu({ email }: { email: string }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const initial = (email[0] ?? "?").toUpperCase();
+  async function signOut() {
+    await supabase.auth.signOut();
+    navigate({ to: "/auth" });
+  }
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="size-8 rounded-full bg-foreground text-background inline-flex items-center justify-center text-xs font-medium hover:opacity-90 transition-opacity"
+        aria-label="Account menu"
+        aria-expanded={open}
+      >
+        {initial}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-background shadow-lg overflow-hidden z-30">
+          <div className="px-3 py-2.5 border-b border-border">
+            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              Signed in
+            </p>
+            <p className="mt-0.5 text-sm truncate">{email || "—"}</p>
+          </div>
+          <button
+            onClick={signOut}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-muted transition-colors"
+          >
+            <LogOut className="size-3.5" />
+            Sign out
+          </button>
+        </div>
+      )}
     </div>
   );
 }
