@@ -16,6 +16,13 @@ import {
   Pencil,
   Check,
   Search,
+  Paperclip,
+  FileText,
+  FileArchive,
+  FileVideo,
+  FileAudio,
+  File as FileIcon,
+  Download,
 } from "lucide-react";
 import { Logo } from "../components/site/Logo";
 
@@ -35,12 +42,23 @@ export const Route = createFileRoute("/app")({
 
 type Role = "user" | "agent" | "system";
 type Step = { kind: "reason" | "tool" | "memory"; label: string };
+type AttachmentKind = "image" | "video" | "audio" | "archive" | "document" | "file";
+type Attachment = {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
+  kind: AttachmentKind;
+  /** data: URL (small files) or null when too large to persist */
+  dataUrl: string | null;
+};
 type Message = {
   id: string;
   role: Role;
   content: string;
   steps?: Step[];
   interrupted?: boolean;
+  attachments?: Attachment[];
 };
 type Session = {
   id: string;
@@ -53,7 +71,10 @@ type Store = {
   activeId: string;
 };
 
-const STORAGE_KEY = "discoverse.chat.v2";
+const STORAGE_KEY = "discoverse.chat.v3";
+const MAX_PERSIST_BYTES = 5 * 1024 * 1024; // 5MB per file kept inline
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
+const MAX_FILES_PER_MESSAGE = 10;
 
 const SUGGESTIONS = [
   "Research the latest in autonomous agents and summarize",
