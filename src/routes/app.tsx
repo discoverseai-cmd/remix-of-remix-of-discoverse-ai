@@ -409,8 +409,10 @@ function AgentApp() {
 
   async function send(text: string) {
     const trimmed = text.trim();
-    if ((!trimmed && pending.length === 0) || busy) return;
-    const attachments = pending;
+    // Combine current pending with reused-last attachments (dedup by id).
+    const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
+    const attachments = [...pending, ...reused];
+    if ((!trimmed && attachments.length === 0) || busy) return;
     const userMsg: Message = {
       id: uid(),
       role: "user",
@@ -434,6 +436,8 @@ function AgentApp() {
     setInput("");
     setPending([]);
     setAttachError(null);
+    if (attachments.length) setLastSent(attachments);
+    setReuseLast(false);
     setBusy(true);
 
     const controller = new AbortController();
