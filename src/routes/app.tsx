@@ -759,6 +759,10 @@ function AgentApp() {
           })}
         </div>
 
+        <div className="border-t border-border p-2 shrink-0">
+          <UserMenu email={user.email ?? ""} collapsed={sidebarCollapsed} />
+        </div>
+
         <div className="border-t border-border p-2 shrink-0 hidden md:block">
           <button
             onClick={() => setSidebarCollapsed((v) => !v)}
@@ -825,17 +829,14 @@ function AgentApp() {
                 {activeSession?.title ?? "New chat"}
               </span>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                <span
-                  className={
-                    "size-1.5 rounded-full " +
-                    (busy ? "bg-foreground animate-pulse" : "bg-foreground/40")
-                  }
-                />
-                {busy ? "Running" : "Idle"}
-              </div>
-              <UserMenu email={user.email ?? ""} />
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground shrink-0">
+              <span
+                className={
+                  "size-1.5 rounded-full " +
+                  (busy ? "bg-foreground animate-pulse" : "bg-foreground/40")
+                }
+              />
+              {busy ? "Running" : "Idle"}
             </div>
           </div>
         </header>
@@ -1409,7 +1410,7 @@ function TraceCard({
   );
 }
 
-function UserMenu({ email }: { email: string }) {
+function UserMenu({ email, collapsed }: { email: string; collapsed?: boolean }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1430,14 +1431,35 @@ function UserMenu({ email }: { email: string }) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="size-8 rounded-full bg-foreground text-background inline-flex items-center justify-center text-xs font-medium hover:opacity-90 transition-opacity"
+        className={
+          "w-full inline-flex items-center gap-2.5 rounded-lg hover:bg-muted transition-colors text-left " +
+          (collapsed ? "md:justify-center md:px-0 md:py-2 px-2 py-2" : "px-2 py-2")
+        }
         aria-label="Account menu"
         aria-expanded={open}
+        title={email || "Account"}
       >
-        {initial}
+        <span className="size-8 rounded-full bg-foreground text-background inline-flex items-center justify-center text-xs font-medium shrink-0">
+          {initial}
+        </span>
+        {!collapsed && (
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium truncate">
+              {email.split("@")[0] || "Account"}
+            </span>
+            <span className="block text-[11px] text-muted-foreground truncate">
+              {email || "Signed in"}
+            </span>
+          </span>
+        )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-background shadow-lg overflow-hidden z-30">
+        <div
+          className={
+            "absolute bottom-full mb-2 w-56 rounded-xl border border-border bg-background shadow-lg overflow-hidden z-50 " +
+            (collapsed ? "left-0" : "left-0 right-0 w-auto")
+          }
+        >
           <div className="px-3 py-2.5 border-b border-border">
             <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
               Signed in
