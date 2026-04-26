@@ -417,6 +417,15 @@ function AgentApp() {
   const [streamStatus, setStreamStatus] = useState<"idle" | "streaming" | "done">(
     "idle"
   );
+  // Active agent run tracking — drives the in-chat run control panel and
+  // highlights the matching item in the sidebar Runs list.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [activeRunStatus, setActiveRunStatus] = useState<string | null>(null);
+  const [activeRunError, setActiveRunError] = useState<string | null>(null);
+  const [activeRunCredits, setActiveRunCredits] = useState<number>(0);
+  const [activeRunStepCount, setActiveRunStepCount] = useState<number>(0);
+  // Last-sent text per session for one-click Retry on the failed run.
+  const [lastSentBySession, setLastSentBySession] = useState<Record<string, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
