@@ -36,7 +36,7 @@ import remarkGfm from "remark-gfm";
 import { Logo } from "../components/site/Logo";
 import { useAuth } from "../hooks/use-auth";
 import { supabase } from "../integrations/supabase/client";
-import { useCredits, costFromUsage, estimateCost } from "../hooks/use-credits";
+import { useCredits, costFromUsage, estimateCost, type Tier } from "../hooks/use-credits";
 import { CreditsBadge, UpgradeDialog } from "../components/credits/UpgradeDialog";
 import { Lock } from "lucide-react";
 
