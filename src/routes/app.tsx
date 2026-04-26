@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -23,8 +23,13 @@ import {
   FileAudio,
   File as FileIcon,
   Download,
+  GripVertical,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import { Logo } from "../components/site/Logo";
+import { useAuth } from "../hooks/use-auth";
+import { supabase } from "../integrations/supabase/client";
 
 export const Route = createFileRoute("/app")({
   component: AgentApp,
