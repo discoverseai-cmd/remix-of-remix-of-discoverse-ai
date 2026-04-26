@@ -174,6 +174,61 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
+const ARCHIVE_EXTS = ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz"];
+const DOC_EXTS = [
+  "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
+  "txt", "md", "csv", "json", "xml", "yaml", "yml", "log",
+];
+
+function detectKind(file: File): AttachmentKind {
+  const mime = file.type.toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (ARCHIVE_EXTS.includes(ext) || mime.includes("zip") || mime.includes("compressed"))
+    return "archive";
+  if (DOC_EXTS.includes(ext) || mime.startsWith("text/") || mime.includes("pdf") || mime.includes("officedocument"))
+    return "document";
+  return "file";
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function readAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error ?? new Error("Read failed"));
+    r.readAsDataURL(file);
+  });
+}
+
+async function fileToAttachment(file: File): Promise<Attachment> {
+  const kind = detectKind(file);
+  let dataUrl: string | null = null;
+  if (file.size <= MAX_PERSIST_BYTES) {
+    try {
+      dataUrl = await readAsDataURL(file);
+    } catch {
+      dataUrl = null;
+    }
+  }
+  return {
+    id: uid(),
+    name: file.name,
+    size: file.size,
+    mime: file.type || "application/octet-stream",
+    kind,
+    dataUrl,
+  };
+}
+
 function AgentApp() {
   const [hydrated, setHydrated] = useState(false);
   const [store, setStore] = useState<Store>(() => {
