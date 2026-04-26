@@ -84,6 +84,8 @@ type Message = {
   steps?: Step[];
   interrupted?: boolean;
   attachments?: Attachment[];
+  timeline?: TimelineEvent[];
+  stopReason?: string;
 };
 type Session = {
   id: string;
