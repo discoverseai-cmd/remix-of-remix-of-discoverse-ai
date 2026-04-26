@@ -27,6 +27,9 @@ import {
   LogOut,
   Loader2,
   UserCog,
+  ChevronDown,
+  ChevronRight,
+  Activity,
 } from "lucide-react";
 import { Logo } from "../components/site/Logo";
 import { useAuth } from "../hooks/use-auth";
@@ -48,6 +51,22 @@ export const Route = createFileRoute("/app")({
 
 type Role = "user" | "agent" | "system";
 type Step = { kind: "reason" | "tool" | "memory"; label: string };
+type TimelineEventKind =
+  | "prompt"
+  | "attachments"
+  | "request"
+  | "stream_start"
+  | "tokens"
+  | "stream_end"
+  | "stop"
+  | "error";
+type TimelineEvent = {
+  id: string;
+  ts: number;
+  kind: TimelineEventKind;
+  label: string;
+  detail?: string;
+};
 type AttachmentKind = "image" | "video" | "audio" | "archive" | "document" | "file";
 type Attachment = {
   id: string;
@@ -271,6 +290,11 @@ function AgentApp() {
   const [reuseLast, setReuseLast] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [runEvents, setRunEvents] = useState<TimelineEvent[]>([]);
+  const [timelineOpen, setTimelineOpen] = useState(true);
+  const [streamStatus, setStreamStatus] = useState<"idle" | "streaming" | "done">(
+    "idle"
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -567,6 +591,32 @@ function AgentApp() {
     if (attachments.length) setLastSent(attachments);
     setReuseLast(false);
     setBusy(true);
+    setStreamStatus("idle");
+    const events: TimelineEvent[] = [];
+    const pushEvent = (
+      kind: TimelineEventKind,
+      label: string,
+      detail?: string
+    ) => {
+      events.push({ id: uid(), ts: Date.now(), kind, label, detail });
+      setRunEvents([...events]);
+    };
+    setRunEvents([]);
+    setTimelineOpen(true);
+    pushEvent(
+      "prompt",
+      "Prompt built",
+      `${trimmed.length} chars · ${
+        (activeSession?.messages.filter((m) => m.id !== "welcome").length ?? 0) + 1
+      } turns`
+    );
+    if (attachments.length) {
+      pushEvent(
+        "attachments",
+        "Attachments processed",
+        attachments.map((a) => a.name).join(", ")
+      );
+    }
 
     // Persist user message + maybe-updated title to DB (fire and forget)
     void supabase.from("chat_messages").insert({
@@ -632,6 +682,8 @@ function AgentApp() {
     let acc = "";
     let interrupted = false;
     let errorMsg: string | null = null;
+    let tokenCount = 0;
+    let stopReason: string = "completed";
 
     const updateAssistant = (content: string, extra?: Partial<Message>) => {
       setStore((prev) => {
@@ -653,6 +705,7 @@ function AgentApp() {
     };
 
     try {
+      pushEvent("request", "Request sent", `model ${CHAT_MODEL}`);
       const resp = await fetch(CHAT_FN_URL, {
         method: "POST",
         signal,
@@ -686,6 +739,8 @@ function AgentApp() {
       const decoder = new TextDecoder();
       let buffer = "";
       let done = false;
+      pushEvent("stream_start", "Stream opened");
+      setStreamStatus("streaming");
       while (!done) {
         const { value, done: d } = await reader.read();
         if (d) break;
@@ -707,6 +762,7 @@ function AgentApp() {
             const delta = parsed.choices?.[0]?.delta?.content as string | undefined;
             if (delta) {
               acc += delta;
+              tokenCount += 1;
               updateAssistant(acc);
             }
           } catch {
@@ -718,8 +774,10 @@ function AgentApp() {
     } catch (err) {
       if ((err as DOMException)?.name === "AbortError") {
         interrupted = true;
+        stopReason = "user stopped";
       } else if (!errorMsg) {
         errorMsg = (err as Error).message || "Unexpected error.";
+        stopReason = "error";
       }
     } finally {
       let finalContent = acc;
@@ -729,6 +787,7 @@ function AgentApp() {
           : "Run stopped before the agent responded.";
       } else if (errorMsg && !acc) {
         finalContent = errorMsg;
+        stopReason = "error";
       }
       updateAssistant(finalContent, {
         interrupted: interrupted || (!!errorMsg && !acc),
@@ -744,9 +803,20 @@ function AgentApp() {
         interrupted: interrupted || (!!errorMsg && !acc),
       });
 
+      if (tokenCount > 0) {
+        pushEvent("tokens", "Tokens streamed", `${tokenCount} chunks · ${acc.length} chars`);
+      }
+      if (errorMsg) {
+        pushEvent("error", "Error", errorMsg);
+      }
+      pushEvent("stream_end", "Stream closed", `stop: ${stopReason}`);
       setActiveSteps([]);
       setBusy(false);
+      setStreamStatus("done");
       abortRef.current = null;
+      window.setTimeout(() => {
+        setStreamStatus((s) => (s === "done" ? "idle" : s));
+      }, 4000);
     }
   }
 
@@ -1047,10 +1117,22 @@ function AgentApp() {
               <span
                 className={
                   "size-1.5 rounded-full " +
-                  (busy ? "bg-foreground animate-pulse" : "bg-foreground/40")
+                  (streamStatus === "streaming"
+                    ? "bg-emerald-500 animate-pulse"
+                    : streamStatus === "done"
+                    ? "bg-emerald-500"
+                    : busy
+                    ? "bg-foreground animate-pulse"
+                    : "bg-foreground/40")
                 }
               />
-              {busy ? "Running" : "Idle"}
+              {streamStatus === "streaming"
+                ? "Streaming…"
+                : streamStatus === "done"
+                ? "Done"
+                : busy
+                ? "Running"
+                : "Idle"}
             </div>
           </div>
         </header>
@@ -1063,6 +1145,15 @@ function AgentApp() {
 
             {busy && activeSteps.length > 0 && (
               <TraceCard steps={activeSteps} live />
+            )}
+
+            {runEvents.length > 0 && (
+              <RunTimeline
+                events={runEvents}
+                open={timelineOpen}
+                onToggle={() => setTimelineOpen((v) => !v)}
+                streaming={streamStatus === "streaming"}
+              />
             )}
 
             {messages.length <= 1 && !busy && (
@@ -1620,6 +1711,96 @@ function TraceCard({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function RunTimeline({
+  events,
+  open,
+  onToggle,
+  streaming,
+}: {
+  events: TimelineEvent[];
+  open: boolean;
+  onToggle: () => void;
+  streaming?: boolean;
+}) {
+  const iconFor = (k: TimelineEventKind) => {
+    switch (k) {
+      case "prompt":
+        return <Sparkles className="size-3.5 shrink-0" />;
+      case "attachments":
+        return <Paperclip className="size-3.5 shrink-0" />;
+      case "request":
+        return <Cpu className="size-3.5 shrink-0" />;
+      case "stream_start":
+        return <Activity className="size-3.5 shrink-0" />;
+      case "tokens":
+        return <Box className="size-3.5 shrink-0" />;
+      case "stream_end":
+        return <Check className="size-3.5 shrink-0" />;
+      case "stop":
+        return <Square className="size-3.5 shrink-0" />;
+      case "error":
+        return <X className="size-3.5 shrink-0 text-destructive" />;
+    }
+  };
+  const formatTime = (ts: number) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+  return (
+    <div className="border border-border rounded-xl bg-muted/30 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-muted/50 transition-colors"
+        aria-expanded={open}
+      >
+        <span className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+          {open ? (
+            <ChevronDown className="size-3.5" />
+          ) : (
+            <ChevronRight className="size-3.5" />
+          )}
+          Run timeline
+          <span className="text-foreground/70">· {events.length}</span>
+        </span>
+        {streaming && (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-400">
+            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            streaming
+          </span>
+        )}
+      </button>
+      {open && (
+        <ol className="divide-y divide-border">
+          {events.map((e) => (
+            <li
+              key={e.id}
+              className="px-4 py-2 flex items-start gap-3 text-sm font-mono"
+            >
+              <span className="mt-0.5">{iconFor(e.kind)}</span>
+              <span className="flex-1 min-w-0">
+                <span className="text-foreground">{e.label}</span>
+                {e.detail && (
+                  <span className="block text-[11px] text-muted-foreground truncate">
+                    {e.detail}
+                  </span>
+                )}
+              </span>
+              <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+                {formatTime(e.ts)}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
