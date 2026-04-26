@@ -451,7 +451,13 @@ function AgentApp() {
     setRenameId(null);
     setRenameDraft("");
     if (finalTitle) {
-      void supabase.from("chat_sessions").update({ title: finalTitle }).eq("id", id);
+      void supabase
+        .from("chat_sessions")
+        .update({ title: finalTitle, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) console.error("Failed to rename chat session", error);
+        });
     }
   }
 
@@ -514,7 +520,13 @@ function AgentApp() {
   }
 
   function deleteSession(id: string) {
-    void supabase.from("chat_sessions").delete().eq("id", id);
+    void supabase
+      .from("chat_sessions")
+      .delete()
+      .eq("id", id)
+      .then(({ error }) => {
+        if (error) console.error("Failed to delete chat session", error);
+      });
     setStore((prev) => {
       const remaining = prev.sessions.filter((s) => s.id !== id);
       if (remaining.length === 0) {
