@@ -6,6 +6,7 @@ export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     // Set up listener FIRST
@@ -13,15 +14,17 @@ export function useAuth() {
       setSession(s);
       setUser(s?.user ?? null);
       setLoading(false);
+      setIsReady(true);
     });
     // Then fetch existing session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
       setLoading(false);
+      setIsReady(true);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  return { session, user, loading, signOut: () => supabase.auth.signOut() };
+  return { session, user, loading, isReady, signOut: () => supabase.auth.signOut() };
 }
