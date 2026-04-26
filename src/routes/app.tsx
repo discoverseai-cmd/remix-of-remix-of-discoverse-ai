@@ -1703,6 +1703,16 @@ function AgentApp() {
                 e.target.value = "";
               }}
             />
+            <RunControlPanel
+              runId={activeRunId}
+              status={activeRunStatus}
+              error={activeRunError}
+              creditsSpent={activeRunCredits}
+              stepCount={activeRunStepCount}
+              onCancel={cancelActiveRun}
+              onRetry={retryActiveRun}
+              canRetry={Boolean(lastSentBySession[store.activeId ?? ""])}
+            />
             {pending.length > 0 && (
               <div className="mb-2">
                 <div className="flex flex-wrap gap-2">
