@@ -398,7 +398,7 @@ function AgentApp() {
       // Try DB first
       const { data: sessRows } = await supabase
         .from("chat_sessions")
-        .select("id, title, updated_at")
+        .select("id, title, updated_at, model")
         .order("updated_at", { ascending: false });
       if (cancelled) return;
       console.info(
