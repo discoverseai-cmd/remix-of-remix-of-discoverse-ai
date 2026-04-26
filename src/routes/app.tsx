@@ -473,7 +473,7 @@ function AgentApp() {
           title: s.title,
           messages: byId[s.id]?.length ? byId[s.id] : [WELCOME],
           updatedAt: new Date(s.updated_at).getTime(),
-          model: ((s as { model?: string | null }).model as ModeChoice | null) ?? DEFAULT_MODE,
+          model: coerceMode((s as { model?: string | null }).model),
         }));
         setStore({ sessions, activeId: sessions[0].id });
       } else {
