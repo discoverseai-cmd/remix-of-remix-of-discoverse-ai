@@ -121,7 +121,24 @@ export const TOOL_DEFS = [
 
 export type ToolCtx = { userId: string; sessionId: string; runId: string };
 
-export async function runTool(name: string, args: any, ctx: ToolCtx): Promise<string> {
+const TOOL_ALIASES: Record<string, string> = {
+  scrape: "firecrawl_scrape",
+  search: "firecrawl_search",
+  web_search: "firecrawl_search",
+  map: "firecrawl_map",
+  crawl: "firecrawl_crawl",
+  code: "e2b_code",
+  python: "e2b_code",
+  run_python: "e2b_code",
+  run_code: "e2b_code",
+  execute_code: "e2b_code",
+  sandbox: "e2b_code",
+  remember: "memory_write",
+  recall: "memory_read",
+};
+
+export async function runTool(rawName: string, args: any, ctx: ToolCtx): Promise<string> {
+  const name = TOOL_ALIASES[rawName] ?? rawName;
   switch (name) {
     case "firecrawl_scrape": {
       const r: any = await fc().scrape(args.url, { formats: ["markdown"], onlyMainContent: true });
