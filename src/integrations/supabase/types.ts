@@ -124,12 +124,147 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_ledger: {
+        Row: {
+          created_at: string
+          delta: number
+          id: string
+          message_id: string | null
+          meta: Json | null
+          reason: string
+          session_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          delta: number
+          id?: string
+          message_id?: string | null
+          meta?: Json | null
+          reason: string
+          session_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          delta?: number
+          id?: string
+          message_id?: string | null
+          meta?: Json | null
+          reason?: string
+          session_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      promo_codes: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          max_redemptions: number | null
+          redemption_count: number
+          tier: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          max_redemptions?: number | null
+          redemption_count?: number
+          tier?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          max_redemptions?: number | null
+          redemption_count?: number
+          tier?: string
+        }
+        Relationships: []
+      }
+      user_credits: {
+        Row: {
+          balance: number
+          created_at: string
+          daily_limit: number
+          last_daily_reset: string
+          last_monthly_reset: string
+          monthly_limit: number
+          signup_anniversary_day: number
+          tier: string
+          updated_at: string
+          upgraded_at: string | null
+          user_id: string
+        }
+        Insert: {
+          balance?: number
+          created_at?: string
+          daily_limit?: number
+          last_daily_reset?: string
+          last_monthly_reset?: string
+          monthly_limit?: number
+          signup_anniversary_day?: number
+          tier?: string
+          updated_at?: string
+          upgraded_at?: string | null
+          user_id: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string
+          daily_limit?: number
+          last_daily_reset?: string
+          last_monthly_reset?: string
+          monthly_limit?: number
+          signup_anniversary_day?: number
+          tier?: string
+          updated_at?: string
+          upgraded_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      consume_credits: {
+        Args: {
+          _amount: number
+          _message_id?: string
+          _meta?: Json
+          _reason: string
+          _session_id?: string
+          _user_id: string
+        }
+        Returns: number
+      }
+      redeem_promo_code: { Args: { _code: string }; Returns: Json }
+      reset_credits_if_due: {
+        Args: { _user_id: string }
+        Returns: {
+          balance: number
+          created_at: string
+          daily_limit: number
+          last_daily_reset: string
+          last_monthly_reset: string
+          monthly_limit: number
+          signup_anniversary_day: number
+          tier: string
+          updated_at: string
+          upgraded_at: string | null
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "user_credits"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       [_ in never]: never

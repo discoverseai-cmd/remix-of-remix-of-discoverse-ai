@@ -36,6 +36,9 @@ import remarkGfm from "remark-gfm";
 import { Logo } from "../components/site/Logo";
 import { useAuth } from "../hooks/use-auth";
 import { supabase } from "../integrations/supabase/client";
+import { useCredits, costFromUsage, estimateCost } from "../hooks/use-credits";
+import { CreditsBadge, UpgradeDialog } from "../components/credits/UpgradeDialog";
+import { Lock } from "lucide-react";
 
 export const Route = createFileRoute("/app")({
   component: AgentApp,
@@ -413,6 +416,11 @@ function AgentApp() {
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Credits + tier state
+  const { credits, consume, redeemCode, refresh: refreshCredits } = useCredits();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [creditError, setCreditError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -693,6 +701,12 @@ function AgentApp() {
   }
 
   function setSessionModel(sessionId: string, model: ModeChoice) {
+    // Museum is locked behind upgrade. If the user isn't on museum tier, open
+    // the upgrade dialog instead of switching the chat.
+    if (model === "museum" && credits?.tier !== "museum") {
+      setUpgradeOpen(true);
+      return;
+    }
     setStore((prev) => ({
       ...prev,
       sessions: prev.sessions.map((s) =>
@@ -761,6 +775,25 @@ function AgentApp() {
     const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
     const attachmentsRaw = [...pending, ...reused];
     if (!trimmed && attachmentsRaw.length === 0) return;
+
+    // === Credit gate ===
+    // Effective tier for this run: a museum chat opened by a user that is no
+    // longer on Museum (e.g. promo expired) silently falls back to park pricing.
+    const userTier = credits?.tier ?? "park";
+    const sessionMode = activeSession?.model ?? DEFAULT_MODE;
+    const effectiveTier = sessionMode === "museum" && userTier === "museum" ? "museum" : "park";
+    const estimated = estimateCost(effectiveTier, trimmed);
+    if (estimated > 0 && (credits?.balance ?? 0) < estimated) {
+      setCreditError(
+        userTier === "park"
+          ? `Out of credits — ${credits?.balance ?? 0} left, this needs ~${estimated}. Upgrade to Museum or wait for daily reset.`
+          : `Out of credits — ${credits?.balance ?? 0} left this month, this needs ~${estimated}.`,
+      );
+      setUpgradeOpen(true);
+      return;
+    }
+    setCreditError(null);
+
     setBusy(true);
     setStreamStatus("idle");
     // Upload pending attachments to cloud storage; reused already have storagePath.
@@ -897,6 +930,7 @@ function AgentApp() {
     let errorMsg: string | null = null;
     let tokenCount = 0;
     let stopReason: string = "completed";
+    let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null = null;
 
     const updateAssistant = (content: string, extra?: Partial<Message>) => {
       setStore((prev) => {
@@ -917,9 +951,11 @@ function AgentApp() {
       });
     };
 
-    const sessionMode = activeSession?.model ?? DEFAULT_MODE;
-    const resolvedModel = pickModelForMode(sessionMode, trimmed, attachments);
-    const modelEventDetail = MODE_LABEL[sessionMode];
+    // Use the effectiveTier we computed up top to pick the actual model.
+    // (museum chats fall back to park routing if the user no longer has museum)
+    const routedMode: ModeChoice = effectiveTier;
+    const resolvedModel = pickModelForMode(routedMode, trimmed, attachments);
+    const modelEventDetail = MODE_LABEL[routedMode];
 
     try {
       pushEvent("request", "Request sent", `${modelEventDetail}`);
@@ -982,6 +1018,9 @@ function AgentApp() {
               tokenCount += 1;
               updateAssistant(acc);
             }
+            if (parsed.usage) {
+              usage = parsed.usage;
+            }
           } catch {
             buffer = line + "\n" + buffer;
             break;
@@ -1034,6 +1073,35 @@ function AgentApp() {
       });
       if (assistantMsgError) {
         console.error("Failed to save assistant message", assistantMsgError);
+      }
+
+      // === Charge credits based on real token usage ===
+      // We charge after the response so cost reflects what the model actually
+      // produced. If the upstream didn't report usage, we fall back to the
+      // pre-flight estimate so users still see consistent billing.
+      try {
+        const finalCost = usage
+          ? costFromUsage(effectiveTier, trimmed, usage)
+          : estimateCost(effectiveTier, trimmed);
+        if (finalCost > 0 || effectiveTier === "museum") {
+          const result = await consume(finalCost, "chat_message", {
+            sessionId,
+            messageId: assistantId,
+            data: {
+              tier: effectiveTier,
+              model: resolvedModel,
+              prompt_tokens: usage?.prompt_tokens,
+              completion_tokens: usage?.completion_tokens,
+            },
+          });
+          pushEvent(
+            "tokens",
+            "Credits charged",
+            `${finalCost} credit${finalCost === 1 ? "" : "s"} · ${result.balance} left`,
+          );
+        }
+      } catch (e) {
+        console.error("[credits] charge failed", e);
       }
 
       setActiveSteps([]);
@@ -1349,11 +1417,13 @@ function AgentApp() {
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <CreditsBadge credits={credits} onUpgrade={() => setUpgradeOpen(true)} />
               {activeSession && (
                 <ModelPicker
                   value={activeSession.model}
                   onChange={(m) => setSessionModel(activeSession.id, m)}
                   disabled={busy}
+                  museumLocked={credits?.tier !== "museum"}
                 />
               )}
               <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
@@ -1555,6 +1625,37 @@ function AgentApp() {
           </form>
         </div>
       </div>
+
+      {creditError && (
+        <div
+          role="alert"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] sm:w-auto rounded-lg border border-red-500/40 bg-background shadow-lg px-4 py-3 text-sm flex items-start gap-3"
+        >
+          <Lock className="size-4 mt-0.5 text-red-500 shrink-0" />
+          <div className="flex-1">
+            <div className="font-medium text-foreground">Out of credits</div>
+            <div className="text-muted-foreground text-[12.5px] mt-0.5">{creditError}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCreditError(null)}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Dismiss"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
+      <UpgradeDialog
+        open={upgradeOpen}
+        onClose={() => {
+          setUpgradeOpen(false);
+          void refreshCredits();
+        }}
+        credits={credits}
+        onRedeem={redeemCode}
+      />
     </div>
   );
 }
@@ -2351,10 +2452,12 @@ function ModelPicker({
   value,
   onChange,
   disabled,
+  museumLocked,
 }: {
   value: ModeChoice;
   onChange: (m: ModeChoice) => void;
   disabled?: boolean;
+  museumLocked?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -2400,6 +2503,7 @@ function ModelPicker({
           {MODE_OPTIONS.map((opt) => {
             const active = opt.value === value;
             const premium = opt.value === "museum";
+            const locked = premium && museumLocked;
             return (
               <button
                 key={opt.value}
@@ -2425,20 +2529,23 @@ function ModelPicker({
                     </div>
                     <span
                       className={
-                        "text-[10px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded " +
+                        "text-[10px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded inline-flex items-center gap-1 " +
                         (premium
                           ? "bg-foreground text-background"
                           : "bg-muted text-muted-foreground")
                       }
                     >
-                      {opt.badge}
+                      {locked && <Lock className="size-2.5" />}
+                      {locked ? "Locked" : opt.badge}
                     </span>
                   </div>
                   <div className="text-[11px] text-muted-foreground leading-snug mt-1">
                     {opt.tagline}
                   </div>
                   <div className="text-[12px] text-foreground/80 leading-snug mt-1.5">
-                    {opt.hint}
+                    {locked
+                      ? "Enter an invite code to unlock — best output, longer context."
+                      : opt.hint}
                   </div>
                 </div>
               </button>
