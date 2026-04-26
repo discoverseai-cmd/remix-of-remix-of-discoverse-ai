@@ -96,7 +96,7 @@ export function RunsPanel({ sessionId, collapsed, activeRunId, onSelectRun }: Pr
   if (collapsed) {
     return (
       <div className="px-2 pt-2 pb-1 flex flex-col items-center gap-1.5 border-t border-border">
-        <Activity className="size-3.5 text-muted-foreground" title="Runs" />
+        <Activity className="size-3.5 text-muted-foreground" aria-label="Runs" />
         {runs.slice(0, 3).map((r) => {
           const Icon = STATUS_ICON[r.status] ?? Clock;
           return (
