@@ -750,6 +750,57 @@ function AgentApp() {
     abortRef.current?.abort();
   }
 
+  async function cancelActiveRun() {
+    if (!activeRunId) return;
+    // Optimistic UI: flip status immediately so the panel reacts even before
+    // the realtime UPDATE arrives.
+    setActiveRunStatus("cancelled");
+    try {
+      await cancelAgentRun({ data: { runId: activeRunId } });
+    } catch (err) {
+      console.warn("[agent] cancel failed:", err);
+      setActiveRunError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function retryActiveRun() {
+    const sid = store.activeId;
+    if (!sid) return;
+    const text = lastSentBySession[sid];
+    if (!text) return;
+    void send(text);
+  }
+
+  async function openHistoricalRun(run: AgentRunRow, steps: AgentStepRow[]) {
+    // Replay a past run's steps into the timeline so the user can inspect what
+    // happened. We don't re-fetch from the worker — agent_steps is the source
+    // of truth.
+    setActiveRunId(run.id);
+    setActiveRunStatus(run.status);
+    setActiveRunError(run.error);
+    setActiveRunCredits(run.credits_spent);
+    setActiveRunStepCount(steps.length);
+    const events: TimelineEvent[] = [
+      {
+        kind: "request",
+        label: "Run replayed",
+        detail: `${run.id.slice(0, 8)} · ${run.status}`,
+        ts: Date.now(),
+      },
+      ...steps.map((s) => ({
+        kind: "tokens" as const,
+        label: s.title || (s.tool ? `${s.kind} · ${s.tool}` : s.kind),
+        detail:
+          (s.content && s.content.length > 0
+            ? s.content.slice(0, 240)
+            : s.tool ?? undefined) ?? undefined,
+        ts: new Date(s.created_at).getTime(),
+      })),
+    ];
+    setRunEvents(events);
+    setTimelineOpen(true);
+  }
+
   async function addFiles(files: FileList | File[]) {
     setAttachError(null);
     const arr = Array.from(files);
