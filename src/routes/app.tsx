@@ -1643,23 +1643,30 @@ function AgentApp() {
               ) : (
                 <button
                   type="submit"
-                  disabled={!input.trim() && pending.length === 0}
+                  disabled={(!input.trim() && pending.length === 0) || insufficientCredits}
                   className="m-1.5 inline-flex items-center justify-center size-10 rounded-xl bg-foreground text-background disabled:opacity-30 transition-opacity"
-                  aria-label="Send"
+                  aria-label={insufficientCredits ? "Not enough credits to send" : "Send"}
+                  title={
+                    insufficientCredits
+                      ? `Not enough credits — needs ~${composerEstimate}, ${credits?.balance ?? 0} left`
+                      : "Send"
+                  }
                 >
-                  <ArrowUp className="size-4" />
+                  {insufficientCredits ? (
+                    <Lock className="size-4" />
+                  ) : (
+                    <ArrowUp className="size-4" />
+                  )}
                 </button>
               )}
             </div>
             <CostHint
               input={input}
               busy={busy}
-              tier={
-                (activeSession?.model ?? DEFAULT_MODE) === "museum" && credits?.tier === "museum"
-                  ? "museum"
-                  : "park"
-              }
+              tier={composerTier}
               balance={credits?.balance ?? 0}
+              estimate={composerEstimate}
+              insufficient={insufficientCredits}
               lastCost={lastCost}
               streamStatus={streamStatus}
             />
