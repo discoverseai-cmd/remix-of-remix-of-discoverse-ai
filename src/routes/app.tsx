@@ -2421,10 +2421,12 @@ function ModelPicker({
   value,
   onChange,
   disabled,
+  museumLocked,
 }: {
   value: ModeChoice;
   onChange: (m: ModeChoice) => void;
   disabled?: boolean;
+  museumLocked?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -2470,6 +2472,7 @@ function ModelPicker({
           {MODE_OPTIONS.map((opt) => {
             const active = opt.value === value;
             const premium = opt.value === "museum";
+            const locked = premium && museumLocked;
             return (
               <button
                 key={opt.value}
@@ -2495,20 +2498,23 @@ function ModelPicker({
                     </div>
                     <span
                       className={
-                        "text-[10px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded " +
+                        "text-[10px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded inline-flex items-center gap-1 " +
                         (premium
                           ? "bg-foreground text-background"
                           : "bg-muted text-muted-foreground")
                       }
                     >
-                      {opt.badge}
+                      {locked && <Lock className="size-2.5" />}
+                      {locked ? "Locked" : opt.badge}
                     </span>
                   </div>
                   <div className="text-[11px] text-muted-foreground leading-snug mt-1">
                     {opt.tagline}
                   </div>
                   <div className="text-[12px] text-foreground/80 leading-snug mt-1.5">
-                    {opt.hint}
+                    {locked
+                      ? "Enter an invite code to unlock — best output, longer context."
+                      : opt.hint}
                   </div>
                 </div>
               </button>
