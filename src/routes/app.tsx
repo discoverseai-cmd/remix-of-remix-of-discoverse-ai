@@ -81,6 +81,8 @@ const STORAGE_KEY = "discoverse.chat.v3";
 const MAX_PERSIST_BYTES = 5 * 1024 * 1024; // 5MB per file kept inline
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
 const MAX_FILES_PER_MESSAGE = 10;
+const CHAT_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const CHAT_MODEL = "google/gemini-2.5-flash";
 
 const SUGGESTIONS = [
   "Research the latest in autonomous agents and summarize",
@@ -274,18 +276,69 @@ function AgentApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setStore(loadStore());
-    setHydrated(true);
-  }, []);
+    let cancelled = false;
+    (async () => {
+      if (!user) return;
+      // Try DB first
+      const { data: sessRows } = await supabase
+        .from("chat_sessions")
+        .select("id, title, updated_at")
+        .order("updated_at", { ascending: false });
+      if (cancelled) return;
+      if (sessRows && sessRows.length > 0) {
+        const ids = sessRows.map((s) => s.id);
+        const { data: msgRows } = await supabase
+          .from("chat_messages")
+          .select("id, session_id, role, content, attachments, steps, interrupted, created_at")
+          .in("session_id", ids)
+          .order("created_at", { ascending: true });
+        if (cancelled) return;
+        const byId: Record<string, Message[]> = {};
+        for (const row of msgRows ?? []) {
+          (byId[row.session_id] ||= []).push({
+            id: row.id,
+            role: row.role as Role,
+            content: row.content,
+            attachments: (row.attachments as Attachment[] | null) ?? undefined,
+            steps: (row.steps as Step[] | null) ?? undefined,
+            interrupted: row.interrupted ?? undefined,
+          });
+        }
+        const sessions: Session[] = sessRows.map((s) => ({
+          id: s.id,
+          title: s.title,
+          messages: byId[s.id]?.length ? byId[s.id] : [WELCOME],
+          updatedAt: new Date(s.updated_at).getTime(),
+        }));
+        setStore({ sessions, activeId: sessions[0].id });
+      } else {
+        // Create first session in DB
+        const { data: created } = await supabase
+          .from("chat_sessions")
+          .insert({ user_id: user.id, title: "New chat" })
+          .select("id, title, updated_at")
+          .single();
+        if (cancelled || !created) return;
+        setStore({
+          sessions: [
+            {
+              id: created.id,
+              title: created.title,
+              messages: [WELCOME],
+              updatedAt: new Date(created.updated_at).getTime(),
+            },
+          ],
+          activeId: created.id,
+        });
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-    } catch {
-      /* ignore */
-    }
-  }, [store, hydrated]);
+  // Persistence is now handled per-mutation against the DB.
 
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -325,6 +378,7 @@ function AgentApp() {
     const id = renameId;
     if (!id) return;
     const next = renameDraft.trim();
+    const finalTitle = next || undefined;
     setStore((prev) => ({
       ...prev,
       sessions: prev.sessions.map((s) =>
@@ -333,6 +387,9 @@ function AgentApp() {
     }));
     setRenameId(null);
     setRenameDraft("");
+    if (finalTitle) {
+      void supabase.from("chat_sessions").update({ title: finalTitle }).eq("id", id);
+    }
   }
 
   function cancelRename() {
@@ -365,7 +422,7 @@ function AgentApp() {
     setSidebarOpen(false);
   }
 
-  function startNewChat() {
+  async function startNewChat() {
     abortRef.current?.abort();
     setActiveSteps([]);
     setBusy(false);
@@ -373,21 +430,51 @@ function AgentApp() {
     setLastSent([]);
     setReuseLast(false);
     setAttachError(null);
-    const s = newSession();
+    setSidebarOpen(false);
+    if (!user) return;
+    const { data: created, error } = await supabase
+      .from("chat_sessions")
+      .insert({ user_id: user.id, title: "New chat" })
+      .select("id, title, updated_at")
+      .single();
+    if (error || !created) return;
+    const s: Session = {
+      id: created.id,
+      title: created.title,
+      messages: [WELCOME],
+      updatedAt: new Date(created.updated_at).getTime(),
+    };
     setStore((prev) => ({
       sessions: [s, ...prev.sessions],
       activeId: s.id,
     }));
-    setSidebarOpen(false);
   }
 
   function deleteSession(id: string) {
+    void supabase.from("chat_sessions").delete().eq("id", id);
     setStore((prev) => {
       const remaining = prev.sessions.filter((s) => s.id !== id);
       if (remaining.length === 0) {
-        const s = newSession();
         if (prev.activeId === id) abortRef.current?.abort();
-        return { sessions: [s], activeId: s.id };
+        // Recreate one async; for now, leave empty and rely on next startNewChat
+        if (user) {
+          void supabase
+            .from("chat_sessions")
+            .insert({ user_id: user.id, title: "New chat" })
+            .select("id, title, updated_at")
+            .single()
+            .then(({ data }) => {
+              if (!data) return;
+              const s: Session = {
+                id: data.id,
+                title: data.title,
+                messages: [WELCOME],
+                updatedAt: new Date(data.updated_at).getTime(),
+              };
+              setStore({ sessions: [s], activeId: s.id });
+            });
+        }
+        return { sessions: [], activeId: "" };
       }
       const activeId =
         prev.activeId === id ? remaining[0].id : prev.activeId;
@@ -448,13 +535,19 @@ function AgentApp() {
     const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
     const attachments = [...pending, ...reused];
     if ((!trimmed && attachments.length === 0) || busy) return;
+    if (!user) return;
+    const sessionId = store.activeId;
+    if (!sessionId) return;
+    const userMsgId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : uid();
     const userMsg: Message = {
-      id: uid(),
+      id: userMsgId,
       role: "user",
       content: trimmed,
       attachments: attachments.length ? attachments : undefined,
     };
-    const sessionId = store.activeId;
 
     updateActiveSession((s) => {
       const messages = [...s.messages, userMsg];
@@ -475,15 +568,72 @@ function AgentApp() {
     setReuseLast(false);
     setBusy(true);
 
+    // Persist user message + maybe-updated title to DB (fire and forget)
+    void supabase.from("chat_messages").insert({
+      id: userMsgId,
+      session_id: sessionId,
+      user_id: user.id,
+      role: "user",
+      content: trimmed,
+      attachments: attachments.length ? attachments : null,
+    });
+    const newTitle =
+      activeSession?.title === "New chat"
+        ? deriveTitle([...(activeSession?.messages ?? []), userMsg])
+        : null;
+    if (newTitle) {
+      void supabase
+        .from("chat_sessions")
+        .update({ title: newTitle, updated_at: new Date().toISOString() })
+        .eq("id", sessionId);
+    } else {
+      void supabase
+        .from("chat_sessions")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", sessionId);
+    }
+
     const controller = new AbortController();
     abortRef.current = controller;
     const { signal } = controller;
 
-    const steps = planSteps();
-    const completed: Step[] = [];
     setActiveSteps([]);
 
-    const appendIfActive = (msg: Message) => {
+    // Build conversation context from current session (excluding the welcome message)
+    const convo: Array<{ role: Role; content: string; attachments?: Attachment[] }> = [
+      ...(activeSession?.messages ?? [])
+        .filter((m) => m.id !== "welcome")
+        .map((m) => ({ role: m.role, content: m.content, attachments: m.attachments })),
+      { role: "user" as Role, content: trimmed, attachments },
+    ];
+
+    const assistantId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : uid();
+
+    // Insert empty assistant placeholder into UI
+    setStore((prev) => {
+      if (!prev.sessions.some((s) => s.id === sessionId)) return prev;
+      return {
+        ...prev,
+        sessions: prev.sessions.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                messages: [...s.messages, { id: assistantId, role: "agent", content: "" }],
+                updatedAt: Date.now(),
+              }
+            : s
+        ),
+      };
+    });
+
+    let acc = "";
+    let interrupted = false;
+    let errorMsg: string | null = null;
+
+    const updateAssistant = (content: string, extra?: Partial<Message>) => {
       setStore((prev) => {
         if (!prev.sessions.some((s) => s.id === sessionId)) return prev;
         return {
@@ -492,8 +642,9 @@ function AgentApp() {
             s.id === sessionId
               ? {
                   ...s,
-                  messages: [...s.messages, msg],
-                  updatedAt: Date.now(),
+                  messages: s.messages.map((m) =>
+                    m.id === assistantId ? { ...m, content, ...extra } : m
+                  ),
                 }
               : s
           ),
@@ -502,43 +653,97 @@ function AgentApp() {
     };
 
     try {
-      for (const step of steps) {
-        await wait(650, signal);
-        completed.push(step);
-        setActiveSteps([...completed]);
-      }
-      await wait(400, signal);
-      const ackPrompt = trimmed || `${attachments.length} attached file${attachments.length === 1 ? "" : "s"}`;
-      const fileNote = attachments.length
-        ? `\n\nReceived ${attachments.length} attachment${attachments.length === 1 ? "" : "s"} (${attachments.map((a) => a.name).join(", ")}). They are available for inspection in the sandbox.`
-        : "";
-      appendIfActive({
-        id: uid(),
-        role: "agent",
-        content: `I planned a ${steps.length}-step trace for: "${ackPrompt}".\n\nThe sandbox executed cleanly and I stored the new context as an episodic memory.${fileNote}`,
-        steps,
+      const resp = await fetch(CHAT_FN_URL, {
+        method: "POST",
+        signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          model: CHAT_MODEL,
+          messages: convo.map((m) => ({
+            role: m.role,
+            content: m.content,
+            attachments: m.attachments?.map((a) => ({
+              name: a.name,
+              mime: a.mime,
+              dataUrl: a.dataUrl,
+            })),
+          })),
+        }),
       });
+
+      if (!resp.ok || !resp.body) {
+        if (resp.status === 429) errorMsg = "Rate limit hit. Try again in a moment.";
+        else if (resp.status === 402)
+          errorMsg = "AI credits exhausted. Add funds in workspace settings.";
+        else errorMsg = "The agent could not be reached.";
+        throw new Error(errorMsg);
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let done = false;
+      while (!done) {
+        const { value, done: d } = await reader.read();
+        if (d) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf("\n")) !== -1) {
+          let line = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 1);
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (!line || line.startsWith(":")) continue;
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") {
+            done = true;
+            break;
+          }
+          try {
+            const parsed = JSON.parse(payload);
+            const delta = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (delta) {
+              acc += delta;
+              updateAssistant(acc);
+            }
+          } catch {
+            buffer = line + "\n" + buffer;
+            break;
+          }
+        }
+      }
     } catch (err) {
       if ((err as DOMException)?.name === "AbortError") {
-        appendIfActive({
-          id: uid(),
-          role: "agent",
-          content:
-            completed.length === 0
-              ? "Run stopped before the agent began executing."
-              : `Run stopped after ${completed.length} of ${steps.length} steps. Partial trace preserved below.`,
-          steps: completed.length > 0 ? completed : undefined,
-          interrupted: true,
-        });
-      } else {
-        appendIfActive({
-          id: uid(),
-          role: "agent",
-          content: "The agent encountered an unexpected error. Try again.",
-          interrupted: true,
-        });
+        interrupted = true;
+      } else if (!errorMsg) {
+        errorMsg = (err as Error).message || "Unexpected error.";
       }
     } finally {
+      let finalContent = acc;
+      if (interrupted) {
+        finalContent = acc
+          ? acc + "\n\n_[Run stopped]_"
+          : "Run stopped before the agent responded.";
+      } else if (errorMsg && !acc) {
+        finalContent = errorMsg;
+      }
+      updateAssistant(finalContent, {
+        interrupted: interrupted || (!!errorMsg && !acc),
+      });
+
+      // Persist final assistant message
+      void supabase.from("chat_messages").insert({
+        id: assistantId,
+        session_id: sessionId,
+        user_id: user.id,
+        role: "agent",
+        content: finalContent,
+        interrupted: interrupted || (!!errorMsg && !acc),
+      });
+
       setActiveSteps([]);
       setBusy(false);
       abortRef.current = null;
