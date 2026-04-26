@@ -421,7 +421,14 @@ function AgentApp() {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [creditError, setCreditError] = useState<string | null>(null);
   /** Last completed message's actual credit cost (null until first send). */
-  const [lastCost, setLastCost] = useState<{ amount: number; tier: Tier; at: number } | null>(null);
+  const [lastCost, setLastCost] = useState<{
+    amount: number;
+    estimated: number;
+    tier: Tier;
+    at: number;
+    /** -1 = charged less than estimate, 0 = exact, 1 = charged more. */
+    delta: -1 | 0 | 1;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
