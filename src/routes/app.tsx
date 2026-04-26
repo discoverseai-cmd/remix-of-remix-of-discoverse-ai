@@ -159,6 +159,9 @@ function AgentApp() {
   const [activeSteps, setActiveSteps] = useState<Step[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // desktop
+  const [query, setQuery] = useState("");
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -195,6 +198,39 @@ function AgentApp() {
     () => [...store.sessions].sort((a, b) => b.updatedAt - a.updatedAt),
     [store.sessions]
   );
+
+  const filteredSessions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sortedSessions;
+    return sortedSessions.filter((s) => {
+      if (s.title.toLowerCase().includes(q)) return true;
+      return s.messages.some((m) => m.content.toLowerCase().includes(q));
+    });
+  }, [sortedSessions, query]);
+
+  function beginRename(s: Session) {
+    setRenameId(s.id);
+    setRenameDraft(s.title);
+  }
+
+  function commitRename() {
+    const id = renameId;
+    if (!id) return;
+    const next = renameDraft.trim();
+    setStore((prev) => ({
+      ...prev,
+      sessions: prev.sessions.map((s) =>
+        s.id === id ? { ...s, title: next || s.title } : s
+      ),
+    }));
+    setRenameId(null);
+    setRenameDraft("");
+  }
+
+  function cancelRename() {
+    setRenameId(null);
+    setRenameDraft("");
+  }
 
   function updateActiveSession(updater: (s: Session) => Session) {
     setStore((prev) => ({
