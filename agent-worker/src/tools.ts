@@ -3,7 +3,25 @@ import { Sandbox } from "@e2b/code-interpreter";
 import { supabaseAdmin } from "./supabase.js";
 import { embed } from "./lovable-ai.js";
 
-const fc = () => new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY! });
+function fc() {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "Firecrawl is not configured on the worker (FIRECRAWL_API_KEY missing). Cannot scrape/search the web.",
+    );
+  }
+  return new Firecrawl({ apiKey });
+}
+
+function requireE2B(): string {
+  const k = process.env.E2B_API_KEY;
+  if (!k) {
+    throw new Error(
+      "Code sandbox is not configured on the worker (E2B_API_KEY missing). Cannot execute Python.",
+    );
+  }
+  return k;
+}
 
 export const TOOL_COSTS: Record<string, number> = {
   firecrawl_scrape: 2,
@@ -21,7 +39,8 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "firecrawl_scrape",
-      description: "Scrape one URL and return clean markdown.",
+      description:
+        "Fetch a single URL and return clean markdown of the main content. Use this whenever the user asks to scrape, read, or extract information from a specific page.",
       parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
     },
   },
@@ -29,7 +48,8 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "firecrawl_search",
-      description: "Web search. Returns titles + URLs + snippets.",
+      description:
+        "Live web search. Returns ranked title/URL/snippet results. Use whenever the user asks a factual question, wants current info, or needs to find pages.",
       parameters: {
         type: "object",
         properties: { query: { type: "string" }, limit: { type: "number" } },
@@ -41,7 +61,7 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "firecrawl_map",
-      description: "Discover all URLs on a website.",
+      description: "List the URLs of a website (sitemap discovery).",
       parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
     },
   },
@@ -49,7 +69,7 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "firecrawl_crawl",
-      description: "Recursively crawl a site and return content.",
+      description: "Recursively crawl a site (limit pages) and return their markdown.",
       parameters: {
         type: "object",
         properties: { url: { type: "string" }, limit: { type: "number" } },
@@ -61,7 +81,8 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "e2b_code",
-      description: "Run Python in an E2B sandbox. Returns stdout/stderr/result.",
+      description:
+        "Execute Python in a real cloud sandbox and return stdout/stderr/result. Use this when the user asks to RUN a script, scrape with code, compute, parse, transform data, generate a file (PDF/CSV/PNG), make a chart, or do anything that needs actual code execution. You can install packages inline with `!pip install <pkg>` at the top of the code. Always RUN the code yourself instead of pasting it back to the user.",
       parameters: { type: "object", properties: { code: { type: "string" } }, required: ["code"] },
     },
   },
@@ -104,12 +125,17 @@ export async function runTool(name: string, args: any, ctx: ToolCtx): Promise<st
   switch (name) {
     case "firecrawl_scrape": {
       const r: any = await fc().scrape(args.url, { formats: ["markdown"], onlyMainContent: true });
-      return (r.markdown ?? r.data?.markdown ?? "").slice(0, 12000);
+      const md = (r.markdown ?? r.data?.markdown ?? "").toString();
+      if (!md) return `(no content extracted from ${args.url})`;
+      return md.slice(0, 12000);
     }
     case "firecrawl_search": {
       const r: any = await fc().search(args.query, { limit: args.limit ?? 5 });
-      const items = r.web ?? r.data ?? [];
-      return JSON.stringify(items.slice(0, 10).map((x: any) => ({ title: x.title, url: x.url, description: x.description })));
+      const items = r.web ?? r.data ?? r.results ?? [];
+      if (!items.length) return `(no results for "${args.query}")`;
+      return JSON.stringify(
+        items.slice(0, 10).map((x: any) => ({ title: x.title, url: x.url, description: x.description })),
+      );
     }
     case "firecrawl_map": {
       const r: any = await fc().map(args.url, { limit: 200 });
@@ -121,7 +147,8 @@ export async function runTool(name: string, args: any, ctx: ToolCtx): Promise<st
       return JSON.stringify(data.slice(0, 20).map((d: any) => ({ url: d.metadata?.sourceURL, markdown: (d.markdown ?? "").slice(0, 2000) })));
     }
     case "e2b_code": {
-      const sbx = await Sandbox.create({ apiKey: process.env.E2B_API_KEY });
+      const apiKey = requireE2B();
+      const sbx = await Sandbox.create({ apiKey });
       try {
         const exec = await sbx.runCode(args.code);
         return JSON.stringify({
