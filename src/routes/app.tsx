@@ -650,6 +650,7 @@ function AgentApp() {
                 title: data.title,
                 messages: [WELCOME],
                 updatedAt: new Date(data.updated_at).getTime(),
+                model: DEFAULT_MODEL,
               };
               setStore({ sessions: [s], activeId: s.id });
             });
