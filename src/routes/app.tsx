@@ -40,9 +40,7 @@ import { useCredits, costFromUsage, estimateCost, type Tier } from "../hooks/use
 import { CreditsBadge, UpgradeDialog } from "../components/credits/UpgradeDialog";
 import { Lock } from "lucide-react";
 import { enqueueAgentRun } from "../integrations/agent/enqueue-run.functions";
-import type { Database as SupabaseDatabase } from "../integrations/supabase/types";
-
-type AgentStepRow = SupabaseDatabase["public"]["Tables"]["agent_steps"]["Row"];
+import type { AgentStep as AgentStepRow } from "../hooks/use-agent-run";
 
 export const Route = createFileRoute("/app")({
   component: AgentApp,
