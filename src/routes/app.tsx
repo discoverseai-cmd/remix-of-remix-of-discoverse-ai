@@ -276,18 +276,69 @@ function AgentApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setStore(loadStore());
-    setHydrated(true);
-  }, []);
+    let cancelled = false;
+    (async () => {
+      if (!user) return;
+      // Try DB first
+      const { data: sessRows } = await supabase
+        .from("chat_sessions")
+        .select("id, title, updated_at")
+        .order("updated_at", { ascending: false });
+      if (cancelled) return;
+      if (sessRows && sessRows.length > 0) {
+        const ids = sessRows.map((s) => s.id);
+        const { data: msgRows } = await supabase
+          .from("chat_messages")
+          .select("id, session_id, role, content, attachments, steps, interrupted, created_at")
+          .in("session_id", ids)
+          .order("created_at", { ascending: true });
+        if (cancelled) return;
+        const byId: Record<string, Message[]> = {};
+        for (const row of msgRows ?? []) {
+          (byId[row.session_id] ||= []).push({
+            id: row.id,
+            role: row.role as Role,
+            content: row.content,
+            attachments: (row.attachments as Attachment[] | null) ?? undefined,
+            steps: (row.steps as Step[] | null) ?? undefined,
+            interrupted: row.interrupted ?? undefined,
+          });
+        }
+        const sessions: Session[] = sessRows.map((s) => ({
+          id: s.id,
+          title: s.title,
+          messages: byId[s.id]?.length ? byId[s.id] : [WELCOME],
+          updatedAt: new Date(s.updated_at).getTime(),
+        }));
+        setStore({ sessions, activeId: sessions[0].id });
+      } else {
+        // Create first session in DB
+        const { data: created } = await supabase
+          .from("chat_sessions")
+          .insert({ user_id: user.id, title: "New chat" })
+          .select("id, title, updated_at")
+          .single();
+        if (cancelled || !created) return;
+        setStore({
+          sessions: [
+            {
+              id: created.id,
+              title: created.title,
+              messages: [WELCOME],
+              updatedAt: new Date(created.updated_at).getTime(),
+            },
+          ],
+          activeId: created.id,
+        });
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-    } catch {
-      /* ignore */
-    }
-  }, [store, hydrated]);
+  // Persistence is now handled per-mutation against the DB.
 
   useEffect(() => {
     return () => abortRef.current?.abort();
