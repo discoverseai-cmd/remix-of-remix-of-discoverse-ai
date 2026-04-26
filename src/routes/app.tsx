@@ -31,6 +31,8 @@ import {
   ChevronRight,
   Activity,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Logo } from "../components/site/Logo";
 import { useAuth } from "../hooks/use-auth";
 import { supabase } from "../integrations/supabase/client";
