@@ -668,7 +668,24 @@ function AgentApp() {
     });
   }
 
-  function stop() {
+  function setSessionModel(sessionId: string, model: ModelChoice) {
+    setStore((prev) => ({
+      ...prev,
+      sessions: prev.sessions.map((s) =>
+        s.id === sessionId ? { ...s, model } : s,
+      ),
+    }));
+    void supabase
+      .from("chat_sessions")
+      .update({ model })
+      .eq("id", sessionId)
+      .then(({ error }) => {
+        if (error) console.error("[chat-audit] model update FAILED", sessionId, error);
+        else console.info("[chat-audit] model update ok", sessionId, model);
+      });
+  }
+
+
     abortRef.current?.abort();
   }
 
