@@ -950,9 +950,11 @@ function AgentApp() {
       });
     };
 
-    const sessionMode = activeSession?.model ?? DEFAULT_MODE;
-    const resolvedModel = pickModelForMode(sessionMode, trimmed, attachments);
-    const modelEventDetail = MODE_LABEL[sessionMode];
+    // Use the effectiveTier we computed up top to pick the actual model.
+    // (museum chats fall back to park routing if the user no longer has museum)
+    const routedMode: ModeChoice = effectiveTier;
+    const resolvedModel = pickModelForMode(routedMode, trimmed, attachments);
+    const modelEventDetail = MODE_LABEL[routedMode];
 
     try {
       pushEvent("request", "Request sent", `${modelEventDetail}`);
