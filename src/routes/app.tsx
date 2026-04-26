@@ -290,6 +290,11 @@ function AgentApp() {
   const [reuseLast, setReuseLast] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [runEvents, setRunEvents] = useState<TimelineEvent[]>([]);
+  const [timelineOpen, setTimelineOpen] = useState(true);
+  const [streamStatus, setStreamStatus] = useState<"idle" | "streaming" | "done">(
+    "idle"
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
