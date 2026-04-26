@@ -587,7 +587,13 @@ function AgentApp() {
     const trimmed = text.trim();
     // Combine current pending with reused-last attachments (dedup by id).
     const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
-    const attachments = [...pending, ...reused];
+    const attachmentsRaw = [...pending, ...reused];
+    // Upload pending attachments to cloud storage; reused already have storagePath.
+    const attachments = await Promise.all(
+      attachmentsRaw.map((a) =>
+        a.storagePath ? Promise.resolve(a) : uploadAttachment(a, user!.id, store.activeId)
+      )
+    );
     if ((!trimmed && attachments.length === 0) || busy) return;
     if (!user) return;
     const sessionId = store.activeId;
@@ -655,7 +661,7 @@ function AgentApp() {
       user_id: user.id,
       role: "user",
       content: trimmed,
-      attachments: attachments.length ? attachments : null,
+      attachments: attachments.length ? attachments.map(serializeAttachment) : null,
     });
     const newTitle =
       activeSession?.title === "New chat"
