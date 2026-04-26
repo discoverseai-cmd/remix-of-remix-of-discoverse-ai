@@ -40,7 +40,10 @@ import { useCredits, costFromUsage, estimateCost, type Tier } from "../hooks/use
 import { CreditsBadge, UpgradeDialog } from "../components/credits/UpgradeDialog";
 import { Lock } from "lucide-react";
 import { enqueueAgentRun } from "../integrations/agent/enqueue-run.functions";
-import type { AgentStep as AgentStepRow } from "../hooks/use-agent-run";
+import { cancelAgentRun } from "../integrations/agent/cancel-run.functions";
+import type { AgentStep as AgentStepRow, AgentRun as AgentRunRow } from "../hooks/use-agent-run";
+import { RunsPanel } from "../components/agent/RunsPanel";
+import { RunControlPanel } from "../components/agent/RunControlPanel";
 
 export const Route = createFileRoute("/app")({
   component: AgentApp,
@@ -414,6 +417,15 @@ function AgentApp() {
   const [streamStatus, setStreamStatus] = useState<"idle" | "streaming" | "done">(
     "idle"
   );
+  // Active agent run tracking — drives the in-chat run control panel and
+  // highlights the matching item in the sidebar Runs list.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [activeRunStatus, setActiveRunStatus] = useState<string | null>(null);
+  const [activeRunError, setActiveRunError] = useState<string | null>(null);
+  const [activeRunCredits, setActiveRunCredits] = useState<number>(0);
+  const [activeRunStepCount, setActiveRunStepCount] = useState<number>(0);
+  // Last-sent text per session for one-click Retry on the failed run.
+  const [lastSentBySession, setLastSentBySession] = useState<Record<string, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -738,6 +750,59 @@ function AgentApp() {
     abortRef.current?.abort();
   }
 
+  async function cancelActiveRun() {
+    if (!activeRunId) return;
+    // Optimistic UI: flip status immediately so the panel reacts even before
+    // the realtime UPDATE arrives.
+    setActiveRunStatus("cancelled");
+    try {
+      await cancelAgentRun({ data: { runId: activeRunId } });
+    } catch (err) {
+      console.warn("[agent] cancel failed:", err);
+      setActiveRunError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function retryActiveRun() {
+    const sid = store.activeId;
+    if (!sid) return;
+    const text = lastSentBySession[sid];
+    if (!text) return;
+    void send(text);
+  }
+
+  async function openHistoricalRun(run: AgentRunRow, steps: AgentStepRow[]) {
+    // Replay a past run's steps into the timeline so the user can inspect what
+    // happened. We don't re-fetch from the worker — agent_steps is the source
+    // of truth.
+    setActiveRunId(run.id);
+    setActiveRunStatus(run.status);
+    setActiveRunError(run.error);
+    setActiveRunCredits(run.credits_spent);
+    setActiveRunStepCount(steps.length);
+    const events: TimelineEvent[] = [
+      {
+        id: `replay-${run.id}`,
+        kind: "request",
+        label: "Run replayed",
+        detail: `${run.id.slice(0, 8)} · ${run.status}`,
+        ts: Date.now(),
+      },
+      ...steps.map((s) => ({
+        id: s.id,
+        kind: "tokens" as const,
+        label: s.title || (s.tool ? `${s.kind} · ${s.tool}` : s.kind),
+        detail:
+          (s.content && s.content.length > 0
+            ? s.content.slice(0, 240)
+            : s.tool ?? undefined) ?? undefined,
+        ts: new Date(s.created_at).getTime(),
+      })),
+    ];
+    setRunEvents(events);
+    setTimelineOpen(true);
+  }
+
   async function addFiles(files: FileList | File[]) {
     setAttachError(null);
     const arr = Array.from(files);
@@ -972,6 +1037,7 @@ function AgentApp() {
     // The worker streams steps into agent_steps via realtime; we surface them in
     // the timeline as they arrive. Fire-and-forget alongside the chat stream below.
     let agentRunChannel: ReturnType<typeof supabase.channel> | null = null;
+    setLastSentBySession((prev) => ({ ...prev, [sessionId]: trimmed }));
     try {
       const { runId } = await enqueueAgentRun({
         data: {
@@ -982,6 +1048,11 @@ function AgentApp() {
         },
       });
       pushEvent("request", "Agent run queued", runId.slice(0, 8));
+      setActiveRunId(runId);
+      setActiveRunStatus("queued");
+      setActiveRunError(null);
+      setActiveRunCredits(0);
+      setActiveRunStepCount(0);
       agentRunChannel = supabase
         .channel(`agent-run-${runId}`)
         .on(
@@ -1002,6 +1073,7 @@ function AgentApp() {
                 ? step.content.slice(0, 240)
                 : step.tool ?? undefined;
             pushEvent("tokens", label, detail);
+            setActiveRunStepCount((n) => n + 1);
           },
         )
         .on(
@@ -1013,7 +1085,15 @@ function AgentApp() {
             filter: `id=eq.${runId}`,
           },
           (payload) => {
-            const next = payload.new as { status?: string; error?: string | null };
+            const next = payload.new as {
+              status?: string;
+              error?: string | null;
+              credits_spent?: number;
+            };
+            if (next.status) setActiveRunStatus(next.status);
+            if (typeof next.credits_spent === "number")
+              setActiveRunCredits(next.credits_spent);
+            if (next.error) setActiveRunError(next.error);
             if (next.status && next.status !== "running" && next.status !== "queued") {
               pushEvent(
                 next.status === "succeeded" ? "stream_end" : "error",
@@ -1035,6 +1115,8 @@ function AgentApp() {
         "Agent worker unavailable",
         err instanceof Error ? err.message : String(err),
       );
+      setActiveRunStatus("failed");
+      setActiveRunError(err instanceof Error ? err.message : String(err));
     }
 
     try {
@@ -1441,6 +1523,13 @@ function AgentApp() {
           })}
         </div>
 
+        <RunsPanel
+          sessionId={activeSession?.id ?? null}
+          collapsed={sidebarCollapsed}
+          activeRunId={activeRunId}
+          onSelectRun={openHistoricalRun}
+        />
+
         <div
           className="border-t border-border p-2 shrink-0"
           style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
@@ -1613,6 +1702,16 @@ function AgentApp() {
                 if (e.target.files) addFiles(e.target.files);
                 e.target.value = "";
               }}
+            />
+            <RunControlPanel
+              runId={activeRunId}
+              status={activeRunStatus}
+              error={activeRunError}
+              creditsSpent={activeRunCredits}
+              stepCount={activeRunStepCount}
+              onCancel={cancelActiveRun}
+              onRetry={retryActiveRun}
+              canRetry={Boolean(lastSentBySession[store.activeId ?? ""])}
             />
             {pending.length > 0 && (
               <div className="mb-2">
