@@ -615,6 +615,7 @@ function AgentApp() {
       title: created.title,
       messages: [WELCOME],
       updatedAt: new Date(created.updated_at).getTime(),
+      model: DEFAULT_MODEL,
     };
     setStore((prev) => ({
       sessions: [s, ...prev.sessions],
