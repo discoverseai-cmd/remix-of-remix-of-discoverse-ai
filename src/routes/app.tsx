@@ -727,7 +727,34 @@ function AgentApp() {
       </aside>
 
       {/* Main column */}
-      <div className="flex-1 min-w-0 flex flex-col min-h-dvh">
+      <div
+        className="flex-1 min-w-0 flex flex-col min-h-dvh relative"
+        onDragOver={(e) => {
+          if (e.dataTransfer?.types?.includes("Files")) {
+            e.preventDefault();
+            setDragOver(true);
+          }
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragOver(false);
+        }}
+        onDrop={(e) => {
+          if (e.dataTransfer?.files?.length) {
+            e.preventDefault();
+            addFiles(e.dataTransfer.files);
+          }
+          setDragOver(false);
+        }}
+      >
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 z-30 m-3 border-2 border-dashed border-foreground/40 rounded-2xl bg-background/80 backdrop-blur-sm flex items-center justify-center">
+            <div className="text-center">
+              <Paperclip className="size-6 mx-auto mb-2" />
+              <p className="text-sm font-medium">Drop files to attach</p>
+              <p className="text-xs text-muted-foreground mt-1">Up to 20MB · Max {MAX_FILES_PER_MESSAGE}</p>
+            </div>
+          </div>
+        )}
         <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-xl">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
