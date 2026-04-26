@@ -420,6 +420,8 @@ function AgentApp() {
   const { credits, consume, redeemCode, refresh: refreshCredits } = useCredits();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [creditError, setCreditError] = useState<string | null>(null);
+  /** Last completed message's actual credit cost (null until first send). */
+  const [lastCost, setLastCost] = useState<{ amount: number; tier: Tier; at: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
