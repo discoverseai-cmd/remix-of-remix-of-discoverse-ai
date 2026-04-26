@@ -158,6 +158,10 @@ const MODE_LABEL: Record<ModeChoice, string> = MODE_OPTIONS.reduce(
  *  - museum  → mid-to-high quality models (pro, gpt-5) with smart routing
  *              based on prompt intent and attachments.
  */
+function coerceMode(value: unknown): ModeChoice {
+  return value === "museum" ? "museum" : "park";
+}
+
 function pickModelForMode(
   mode: ModeChoice,
   prompt: string,
