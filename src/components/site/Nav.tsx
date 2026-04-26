@@ -58,12 +58,12 @@ export function Nav() {
           >
             Docs
           </a>
-          <a
-            href="#deploy"
+          <Link
+            to="/app"
             className="bg-foreground text-background text-sm font-medium px-4 py-2 rounded-md hover:opacity-90 transition-opacity"
           >
-            Deploy Agent
-          </a>
+            Try the agent
+          </Link>
         </div>
 
         <button
@@ -88,12 +88,13 @@ export function Nav() {
                 {l.label}
               </a>
             ))}
-            <a
-              href="#deploy"
+            <Link
+              to="/app"
+              onClick={() => setOpen(false)}
               className="mt-3 bg-foreground text-background text-center text-sm font-medium px-4 py-3 rounded-md"
             >
-              Deploy Agent
-            </a>
+              Try the agent
+            </Link>
           </div>
         </div>
       )}
