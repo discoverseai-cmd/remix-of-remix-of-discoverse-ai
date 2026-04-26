@@ -16,6 +16,13 @@ import {
   Pencil,
   Check,
   Search,
+  Paperclip,
+  FileText,
+  FileArchive,
+  FileVideo,
+  FileAudio,
+  File as FileIcon,
+  Download,
 } from "lucide-react";
 import { Logo } from "../components/site/Logo";
 
@@ -35,12 +42,23 @@ export const Route = createFileRoute("/app")({
 
 type Role = "user" | "agent" | "system";
 type Step = { kind: "reason" | "tool" | "memory"; label: string };
+type AttachmentKind = "image" | "video" | "audio" | "archive" | "document" | "file";
+type Attachment = {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
+  kind: AttachmentKind;
+  /** data: URL (small files) or null when too large to persist */
+  dataUrl: string | null;
+};
 type Message = {
   id: string;
   role: Role;
   content: string;
   steps?: Step[];
   interrupted?: boolean;
+  attachments?: Attachment[];
 };
 type Session = {
   id: string;
@@ -53,7 +71,10 @@ type Store = {
   activeId: string;
 };
 
-const STORAGE_KEY = "discoverse.chat.v2";
+const STORAGE_KEY = "discoverse.chat.v3";
+const MAX_PERSIST_BYTES = 5 * 1024 * 1024; // 5MB per file kept inline
+const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
+const MAX_FILES_PER_MESSAGE = 10;
 
 const SUGGESTIONS = [
   "Research the latest in autonomous agents and summarize",
@@ -107,7 +128,12 @@ function loadStore(): Store {
         return { sessions: parsed.sessions, activeId };
       }
     }
-    // Migrate v1 single-chat storage if present.
+    // Migrate older session storage (v2) or single-chat (v1).
+    const v2 = window.localStorage.getItem("discoverse.chat.v2");
+    if (v2) {
+      const parsed = JSON.parse(v2) as Store;
+      if (parsed?.sessions?.length) return parsed;
+    }
     const legacy = window.localStorage.getItem("discoverse.chat.v1");
     if (legacy) {
       const messages = JSON.parse(legacy) as Message[];
@@ -130,7 +156,14 @@ function deriveTitle(messages: Message[]): string | null {
   const firstUser = messages.find((m) => m.role === "user");
   if (!firstUser) return null;
   const t = firstUser.content.replace(/\s+/g, " ").trim();
-  return t.length > 48 ? t.slice(0, 48) + "…" : t;
+  if (t) return t.length > 48 ? t.slice(0, 48) + "…" : t;
+  if (firstUser.attachments?.length) {
+    const a = firstUser.attachments[0];
+    return firstUser.attachments.length > 1
+      ? `${a.name} +${firstUser.attachments.length - 1}`
+      : a.name;
+  }
+  return null;
 }
 
 function wait(ms: number, signal: AbortSignal) {
@@ -148,6 +181,61 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
+const ARCHIVE_EXTS = ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz"];
+const DOC_EXTS = [
+  "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
+  "txt", "md", "csv", "json", "xml", "yaml", "yml", "log",
+];
+
+function detectKind(file: File): AttachmentKind {
+  const mime = file.type.toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (ARCHIVE_EXTS.includes(ext) || mime.includes("zip") || mime.includes("compressed"))
+    return "archive";
+  if (DOC_EXTS.includes(ext) || mime.startsWith("text/") || mime.includes("pdf") || mime.includes("officedocument"))
+    return "document";
+  return "file";
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function readAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error ?? new Error("Read failed"));
+    r.readAsDataURL(file);
+  });
+}
+
+async function fileToAttachment(file: File): Promise<Attachment> {
+  const kind = detectKind(file);
+  let dataUrl: string | null = null;
+  if (file.size <= MAX_PERSIST_BYTES) {
+    try {
+      dataUrl = await readAsDataURL(file);
+    } catch {
+      dataUrl = null;
+    }
+  }
+  return {
+    id: uid(),
+    name: file.name,
+    size: file.size,
+    mime: file.type || "application/octet-stream",
+    kind,
+    dataUrl,
+  };
+}
+
 function AgentApp() {
   const [hydrated, setHydrated] = useState(false);
   const [store, setStore] = useState<Store>(() => {
@@ -162,8 +250,12 @@ function AgentApp() {
   const [query, setQuery] = useState("");
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [pending, setPending] = useState<Attachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setStore(loadStore());
@@ -288,10 +380,41 @@ function AgentApp() {
     abortRef.current?.abort();
   }
 
+  async function addFiles(files: FileList | File[]) {
+    setAttachError(null);
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    const slotsLeft = MAX_FILES_PER_MESSAGE - pending.length;
+    if (slotsLeft <= 0) {
+      setAttachError(`Max ${MAX_FILES_PER_MESSAGE} files per message.`);
+      return;
+    }
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    for (const f of arr.slice(0, slotsLeft)) {
+      if (f.size > MAX_FILE_BYTES) rejected.push(`${f.name} (>20MB)`);
+      else accepted.push(f);
+    }
+    if (arr.length > slotsLeft) rejected.push(`${arr.length - slotsLeft} extra file(s)`);
+    const built = await Promise.all(accepted.map(fileToAttachment));
+    setPending((prev) => [...prev, ...built]);
+    if (rejected.length) setAttachError(`Skipped: ${rejected.join(", ")}`);
+  }
+
+  function removePending(id: string) {
+    setPending((prev) => prev.filter((a) => a.id !== id));
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
-    const userMsg: Message = { id: uid(), role: "user", content: trimmed };
+    if ((!trimmed && pending.length === 0) || busy) return;
+    const attachments = pending;
+    const userMsg: Message = {
+      id: uid(),
+      role: "user",
+      content: trimmed,
+      attachments: attachments.length ? attachments : undefined,
+    };
     const sessionId = store.activeId;
 
     updateActiveSession((s) => {
@@ -307,6 +430,8 @@ function AgentApp() {
       };
     });
     setInput("");
+    setPending([]);
+    setAttachError(null);
     setBusy(true);
 
     const controller = new AbortController();
@@ -342,10 +467,14 @@ function AgentApp() {
         setActiveSteps([...completed]);
       }
       await wait(400, signal);
+      const ackPrompt = trimmed || `${attachments.length} attached file${attachments.length === 1 ? "" : "s"}`;
+      const fileNote = attachments.length
+        ? `\n\nReceived ${attachments.length} attachment${attachments.length === 1 ? "" : "s"} (${attachments.map((a) => a.name).join(", ")}). They are available for inspection in the sandbox.`
+        : "";
       appendIfActive({
         id: uid(),
         role: "agent",
-        content: `I planned a ${steps.length}-step trace for: "${trimmed}".\n\nThe sandbox executed cleanly and I stored the new context as an episodic memory. Ask a follow-up to refine, or push this trace to a recurring workflow.`,
+        content: `I planned a ${steps.length}-step trace for: "${ackPrompt}".\n\nThe sandbox executed cleanly and I stored the new context as an episodic memory.${fileNote}`,
         steps,
       });
     } catch (err) {
@@ -598,7 +727,34 @@ function AgentApp() {
       </aside>
 
       {/* Main column */}
-      <div className="flex-1 min-w-0 flex flex-col min-h-dvh">
+      <div
+        className="flex-1 min-w-0 flex flex-col min-h-dvh relative"
+        onDragOver={(e) => {
+          if (e.dataTransfer?.types?.includes("Files")) {
+            e.preventDefault();
+            setDragOver(true);
+          }
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragOver(false);
+        }}
+        onDrop={(e) => {
+          if (e.dataTransfer?.files?.length) {
+            e.preventDefault();
+            addFiles(e.dataTransfer.files);
+          }
+          setDragOver(false);
+        }}
+      >
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 z-30 m-3 border-2 border-dashed border-foreground/40 rounded-2xl bg-background/80 backdrop-blur-sm flex items-center justify-center">
+            <div className="text-center">
+              <Paperclip className="size-6 mx-auto mb-2" />
+              <p className="text-sm font-medium">Drop files to attach</p>
+              <p className="text-xs text-muted-foreground mt-1">Up to 20MB · Max {MAX_FILES_PER_MESSAGE}</p>
+            </div>
+          </div>
+        )}
         <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-xl">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
@@ -669,7 +825,37 @@ function AgentApp() {
             onSubmit={onSubmit}
             className="max-w-3xl mx-auto px-4 sm:px-6 py-3 sm:py-4"
           >
-            <div className="relative flex items-end gap-2 border border-border rounded-2xl bg-background shadow-sm focus-within:border-foreground/40 transition-colors">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files) addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            {pending.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {pending.map((a) => (
+                  <PendingChip key={a.id} attachment={a} onRemove={() => removePending(a.id)} />
+                ))}
+              </div>
+            )}
+            {attachError && (
+              <p className="mb-2 text-[11px] text-foreground/70">{attachError}</p>
+            )}
+            <div className="relative flex items-end gap-1 border border-border rounded-2xl bg-background shadow-sm focus-within:border-foreground/40 transition-colors">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy || pending.length >= MAX_FILES_PER_MESSAGE}
+                className="m-1.5 inline-flex items-center justify-center size-10 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 transition-colors"
+                aria-label="Attach files"
+                title="Attach files"
+              >
+                <Paperclip className="size-4" />
+              </button>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -683,11 +869,11 @@ function AgentApp() {
                 placeholder={
                   busy
                     ? "Agent is running… press stop to interrupt"
-                    : "Give the agent an objective…"
+                    : "Give the agent an objective or drop files…"
                 }
                 rows={1}
                 disabled={busy}
-                className="flex-1 resize-none bg-transparent px-4 py-3.5 text-[15px] outline-none placeholder:text-muted-foreground max-h-40 disabled:opacity-60"
+                className="flex-1 resize-none bg-transparent pl-1 pr-2 py-3.5 text-[15px] outline-none placeholder:text-muted-foreground max-h-40 disabled:opacity-60"
               />
               {busy ? (
                 <button
@@ -702,7 +888,7 @@ function AgentApp() {
               ) : (
                 <button
                   type="submit"
-                  disabled={!input.trim()}
+                  disabled={!input.trim() && pending.length === 0}
                   className="m-1.5 inline-flex items-center justify-center size-10 rounded-xl bg-foreground text-background disabled:opacity-30 transition-opacity"
                   aria-label="Send"
                 >
@@ -738,15 +924,20 @@ function MessageBubble({ message }: { message: Message }) {
             )}
           </div>
         )}
-        <div
-          className={
-            isUser
-              ? "bg-foreground text-background rounded-2xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed"
-              : "text-[15px] leading-relaxed text-foreground whitespace-pre-wrap"
-          }
-        >
-          {message.content}
-        </div>
+        {message.attachments && message.attachments.length > 0 && (
+          <AttachmentList attachments={message.attachments} alignEnd={isUser} className="mb-2" />
+        )}
+        {message.content && (
+          <div
+            className={
+              isUser
+                ? "bg-foreground text-background rounded-2xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap"
+                : "text-[15px] leading-relaxed text-foreground whitespace-pre-wrap"
+            }
+          >
+            {message.content}
+          </div>
+        )}
         {message.steps && (
           <TraceCard
             steps={message.steps}
@@ -755,6 +946,188 @@ function MessageBubble({ message }: { message: Message }) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function kindIcon(kind: AttachmentKind) {
+  if (kind === "video") return <FileVideo className="size-4" />;
+  if (kind === "audio") return <FileAudio className="size-4" />;
+  if (kind === "archive") return <FileArchive className="size-4" />;
+  if (kind === "document") return <FileText className="size-4" />;
+  return <FileIcon className="size-4" />;
+}
+
+function PendingChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: Attachment;
+  onRemove: () => void;
+}) {
+  const isImg = attachment.kind === "image" && attachment.dataUrl;
+  return (
+    <div className="group relative inline-flex items-center gap-2 pl-1 pr-7 py-1 border border-border rounded-lg bg-muted/60 max-w-[220px]">
+      {isImg ? (
+        <img
+          src={attachment.dataUrl!}
+          alt={attachment.name}
+          className="size-8 rounded object-cover shrink-0"
+        />
+      ) : (
+        <div className="size-8 rounded bg-background border border-border inline-flex items-center justify-center shrink-0 text-muted-foreground">
+          {kindIcon(attachment.kind)}
+        </div>
+      )}
+      <div className="min-w-0">
+        <p className="text-xs font-medium truncate">{attachment.name}</p>
+        <p className="text-[10px] font-mono text-muted-foreground">
+          {formatBytes(attachment.size)}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute right-0.5 top-0.5 size-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-background"
+        aria-label="Remove"
+      >
+        <X className="size-3" />
+      </button>
+    </div>
+  );
+}
+
+function AttachmentList({
+  attachments,
+  alignEnd,
+  className = "",
+}: {
+  attachments: Attachment[];
+  alignEnd?: boolean;
+  className?: string;
+}) {
+  const images = attachments.filter((a) => a.kind === "image" && a.dataUrl);
+  const others = attachments.filter((a) => !(a.kind === "image" && a.dataUrl));
+  return (
+    <div className={"flex flex-col gap-2 " + (alignEnd ? "items-end " : "") + className}>
+      {images.length > 0 && (
+        <div
+          className={
+            "grid gap-2 " +
+            (images.length === 1
+              ? "grid-cols-1 max-w-xs"
+              : images.length === 2
+              ? "grid-cols-2 max-w-md"
+              : "grid-cols-2 sm:grid-cols-3 max-w-lg")
+          }
+        >
+          {images.map((a) => (
+            <a
+              key={a.id}
+              href={a.dataUrl!}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-lg overflow-hidden border border-border bg-muted/40"
+            >
+              <img
+                src={a.dataUrl!}
+                alt={a.name}
+                className="w-full h-auto max-h-72 object-cover"
+                loading="lazy"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {others.map((a) => (
+        <AttachmentCard key={a.id} attachment={a} />
+      ))}
+    </div>
+  );
+}
+
+function AttachmentCard({ attachment }: { attachment: Attachment }) {
+  const { kind, dataUrl, name, size, mime } = attachment;
+
+  if (kind === "video" && dataUrl) {
+    return (
+      <div className="border border-border rounded-xl overflow-hidden bg-background max-w-md">
+        <video src={dataUrl} controls className="w-full max-h-80 bg-black" />
+        <FileMeta name={name} size={size} mime={mime} dataUrl={dataUrl} />
+      </div>
+    );
+  }
+  if (kind === "audio" && dataUrl) {
+    return (
+      <div className="border border-border rounded-xl overflow-hidden bg-background max-w-md p-3">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="size-9 rounded-md bg-muted inline-flex items-center justify-center">
+            <FileAudio className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium truncate">{name}</p>
+            <p className="text-[11px] font-mono text-muted-foreground">{formatBytes(size)}</p>
+          </div>
+        </div>
+        <audio src={dataUrl} controls className="w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-border rounded-xl bg-background max-w-md inline-flex items-center gap-3 p-3">
+      <div className="size-10 rounded-md bg-muted inline-flex items-center justify-center text-muted-foreground shrink-0">
+        {kindIcon(kind)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium truncate">{name}</p>
+        <p className="text-[11px] font-mono text-muted-foreground">
+          {formatBytes(size)} · {kind}
+          {!dataUrl && " · preview unavailable"}
+        </p>
+      </div>
+      {dataUrl && (
+        <a
+          href={dataUrl}
+          download={name}
+          className="size-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label="Download"
+          title="Download"
+        >
+          <Download className="size-4" />
+        </a>
+      )}
+    </div>
+  );
+}
+
+function FileMeta({
+  name,
+  size,
+  mime: _mime,
+  dataUrl,
+}: {
+  name: string;
+  size: number;
+  mime: string;
+  dataUrl: string | null;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 border-t border-border">
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium truncate">{name}</p>
+        <p className="text-[11px] font-mono text-muted-foreground">{formatBytes(size)}</p>
+      </div>
+      {dataUrl && (
+        <a
+          href={dataUrl}
+          download={name}
+          className="size-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label="Download"
+        >
+          <Download className="size-3.5" />
+        </a>
+      )}
     </div>
   );
 }
