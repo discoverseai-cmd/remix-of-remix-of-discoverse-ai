@@ -116,14 +116,18 @@ export function useCredits() {
       meta?: { sessionId?: string; messageId?: string; data?: Record<string, unknown> },
     ): Promise<{ ok: boolean; balance: number }> => {
       if (!user) return { ok: false, balance: 0 };
-      const { data, error } = await supabase.rpc("consume_credits", {
+      const args: Record<string, unknown> = {
         _user_id: user.id,
         _amount: amount,
         _reason: reason,
-        _session_id: meta?.sessionId ?? null,
-        _message_id: meta?.messageId ?? null,
-        _meta: meta?.data ?? null,
-      });
+      };
+      if (meta?.sessionId) args._session_id = meta.sessionId;
+      if (meta?.messageId) args._message_id = meta.messageId;
+      if (meta?.data) args._meta = meta.data as Record<string, unknown>;
+      const { data, error } = await supabase.rpc(
+        "consume_credits" as never,
+        args as never,
+      );
       if (error) {
         console.error("[credits] consume failed", error);
         return { ok: false, balance: credits?.balance ?? 0 };
