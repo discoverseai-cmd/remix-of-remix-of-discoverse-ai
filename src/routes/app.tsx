@@ -156,7 +156,14 @@ function deriveTitle(messages: Message[]): string | null {
   const firstUser = messages.find((m) => m.role === "user");
   if (!firstUser) return null;
   const t = firstUser.content.replace(/\s+/g, " ").trim();
-  return t.length > 48 ? t.slice(0, 48) + "…" : t;
+  if (t) return t.length > 48 ? t.slice(0, 48) + "…" : t;
+  if (firstUser.attachments?.length) {
+    const a = firstUser.attachments[0];
+    return firstUser.attachments.length > 1
+      ? `${a.name} +${firstUser.attachments.length - 1}`
+      : a.name;
+  }
+  return null;
 }
 
 function wait(ms: number, signal: AbortSignal) {
