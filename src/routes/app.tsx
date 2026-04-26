@@ -98,15 +98,15 @@ type Session = {
   title: string;
   messages: Message[];
   updatedAt: number;
-  /** Per-session model preference. "auto" lets the app pick the best model for each prompt. */
-  model: ModelChoice;
+  /**
+   * Discoverse mode for this chat.
+   *  - "park"    → free tier. Auto-routes to fast/low-cost models. Default.
+   *  - "museum"  → premium tier. Auto-routes to mid/high-quality models.
+   * The actual underlying model is chosen by the router and never exposed in UI.
+   */
+  model: ModeChoice;
 };
-type ModelChoice =
-  | "auto"
-  | "google/gemini-2.5-pro"
-  | "google/gemini-2.5-flash"
-  | "openai/gpt-5"
-  | "openai/gpt-5-mini";
+type ModeChoice = "park" | "museum";
 type Store = {
   sessions: Session[];
   activeId: string;
