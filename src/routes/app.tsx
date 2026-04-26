@@ -591,6 +591,32 @@ function AgentApp() {
     if (attachments.length) setLastSent(attachments);
     setReuseLast(false);
     setBusy(true);
+    setStreamStatus("idle");
+    const events: TimelineEvent[] = [];
+    const pushEvent = (
+      kind: TimelineEventKind,
+      label: string,
+      detail?: string
+    ) => {
+      events.push({ id: uid(), ts: Date.now(), kind, label, detail });
+      setRunEvents([...events]);
+    };
+    setRunEvents([]);
+    setTimelineOpen(true);
+    pushEvent(
+      "prompt",
+      "Prompt built",
+      `${trimmed.length} chars · ${
+        (activeSession?.messages.filter((m) => m.id !== "welcome").length ?? 0) + 1
+      } turns`
+    );
+    if (attachments.length) {
+      pushEvent(
+        "attachments",
+        "Attachments processed",
+        attachments.map((a) => a.name).join(", ")
+      );
+    }
 
     // Persist user message + maybe-updated title to DB (fire and forget)
     void supabase.from("chat_messages").insert({
@@ -656,6 +682,8 @@ function AgentApp() {
     let acc = "";
     let interrupted = false;
     let errorMsg: string | null = null;
+    let tokenCount = 0;
+    let stopReason: string = "completed";
 
     const updateAssistant = (content: string, extra?: Partial<Message>) => {
       setStore((prev) => {
@@ -677,6 +705,7 @@ function AgentApp() {
     };
 
     try {
+      pushEvent("request", "Request sent", `model ${CHAT_MODEL}`);
       const resp = await fetch(CHAT_FN_URL, {
         method: "POST",
         signal,
@@ -710,6 +739,8 @@ function AgentApp() {
       const decoder = new TextDecoder();
       let buffer = "";
       let done = false;
+      pushEvent("stream_start", "Stream opened");
+      setStreamStatus("streaming");
       while (!done) {
         const { value, done: d } = await reader.read();
         if (d) break;
@@ -731,6 +762,7 @@ function AgentApp() {
             const delta = parsed.choices?.[0]?.delta?.content as string | undefined;
             if (delta) {
               acc += delta;
+              tokenCount += 1;
               updateAssistant(acc);
             }
           } catch {
@@ -742,8 +774,10 @@ function AgentApp() {
     } catch (err) {
       if ((err as DOMException)?.name === "AbortError") {
         interrupted = true;
+        stopReason = "user stopped";
       } else if (!errorMsg) {
         errorMsg = (err as Error).message || "Unexpected error.";
+        stopReason = "error";
       }
     } finally {
       let finalContent = acc;
@@ -753,6 +787,7 @@ function AgentApp() {
           : "Run stopped before the agent responded.";
       } else if (errorMsg && !acc) {
         finalContent = errorMsg;
+        stopReason = "error";
       }
       updateAssistant(finalContent, {
         interrupted: interrupted || (!!errorMsg && !acc),
@@ -768,9 +803,20 @@ function AgentApp() {
         interrupted: interrupted || (!!errorMsg && !acc),
       });
 
+      if (tokenCount > 0) {
+        pushEvent("tokens", "Tokens streamed", `${tokenCount} chunks · ${acc.length} chars`);
+      }
+      if (errorMsg) {
+        pushEvent("error", "Error", errorMsg);
+      }
+      pushEvent("stream_end", "Stream closed", `stop: ${stopReason}`);
       setActiveSteps([]);
       setBusy(false);
+      setStreamStatus("done");
       abortRef.current = null;
+      window.setTimeout(() => {
+        setStreamStatus((s) => (s === "done" ? "idle" : s));
+      }, 4000);
     }
   }
 
