@@ -1395,28 +1395,51 @@ function AgentApp() {
           </div>
         )}
         <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-xl">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="max-w-3xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="md:hidden inline-flex items-center justify-center size-9 -ml-2 rounded-md hover:bg-muted"
+                className="md:hidden inline-flex items-center justify-center size-9 -ml-1 rounded-md hover:bg-muted shrink-0"
                 aria-label="Open chats"
               >
                 <PanelLeft className="size-4" />
               </button>
               <Link
                 to="/"
-                className="hidden md:inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                className="hidden md:inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0"
               >
                 <ArrowLeft className="size-4" />
                 <span>Home</span>
               </Link>
-              <span className="hidden md:inline text-muted-foreground">·</span>
-              <span className="font-medium tracking-tight text-[15px] truncate">
+              <span className="hidden md:inline text-muted-foreground shrink-0">·</span>
+              {/* Live status dot — replaces noisy "Idle/Streaming/Done" text */}
+              <span
+                aria-hidden
+                className={
+                  "size-1.5 rounded-full shrink-0 " +
+                  (streamStatus === "streaming"
+                    ? "bg-emerald-500 animate-pulse"
+                    : streamStatus === "done"
+                    ? "bg-emerald-500"
+                    : busy
+                    ? "bg-foreground animate-pulse"
+                    : "bg-foreground/30")
+                }
+                title={
+                  streamStatus === "streaming"
+                    ? "Streaming"
+                    : streamStatus === "done"
+                    ? "Done"
+                    : busy
+                    ? "Running"
+                    : "Ready"
+                }
+              />
+              <span className="font-medium tracking-tight text-[14px] sm:text-[15px] truncate">
                 {activeSession?.title ?? "New chat"}
               </span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <CreditsBadge credits={credits} onUpgrade={() => setUpgradeOpen(true)} />
               {activeSession && (
                 <ModelPicker
@@ -1426,27 +1449,6 @@ function AgentApp() {
                   museumLocked={credits?.tier !== "museum"}
                 />
               )}
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                <span
-                  className={
-                    "size-1.5 rounded-full " +
-                    (streamStatus === "streaming"
-                      ? "bg-emerald-500 animate-pulse"
-                      : streamStatus === "done"
-                      ? "bg-emerald-500"
-                      : busy
-                      ? "bg-foreground animate-pulse"
-                      : "bg-foreground/40")
-                  }
-                />
-                {streamStatus === "streaming"
-                  ? "Streaming…"
-                  : streamStatus === "done"
-                  ? "Done"
-                  : busy
-                  ? "Running"
-                  : "Idle"}
-              </div>
             </div>
           </div>
         </header>
