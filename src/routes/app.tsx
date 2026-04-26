@@ -340,12 +340,21 @@ function AgentApp() {
           .order("created_at", { ascending: true });
         if (cancelled) return;
         const byId: Record<string, Message[]> = {};
-        for (const row of msgRows ?? []) {
+        const hydratedRows = await Promise.all(
+          (msgRows ?? []).map(async (row) => {
+            const attachments = await hydrateAttachments(
+              (row.attachments as Attachment[] | null) ?? undefined
+            );
+            return { row, attachments };
+          })
+        );
+        if (cancelled) return;
+        for (const { row, attachments } of hydratedRows) {
           (byId[row.session_id] ||= []).push({
             id: row.id,
             role: row.role as Role,
             content: row.content,
-            attachments: (row.attachments as Attachment[] | null) ?? undefined,
+            attachments,
             steps: (row.steps as Step[] | null) ?? undefined,
             interrupted: row.interrupted ?? undefined,
             timeline:
