@@ -825,17 +825,14 @@ function AgentApp() {
                 {activeSession?.title ?? "New chat"}
               </span>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                <span
-                  className={
-                    "size-1.5 rounded-full " +
-                    (busy ? "bg-foreground animate-pulse" : "bg-foreground/40")
-                  }
-                />
-                {busy ? "Running" : "Idle"}
-              </div>
-              <UserMenu email={user.email ?? ""} />
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground shrink-0">
+              <span
+                className={
+                  "size-1.5 rounded-full " +
+                  (busy ? "bg-foreground animate-pulse" : "bg-foreground/40")
+                }
+              />
+              {busy ? "Running" : "Idle"}
             </div>
           </div>
         </header>
