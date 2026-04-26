@@ -1328,26 +1328,35 @@ function AgentApp() {
                 {activeSession?.title ?? "New chat"}
               </span>
             </div>
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground shrink-0">
-              <span
-                className={
-                  "size-1.5 rounded-full " +
-                  (streamStatus === "streaming"
-                    ? "bg-emerald-500 animate-pulse"
-                    : streamStatus === "done"
-                    ? "bg-emerald-500"
-                    : busy
-                    ? "bg-foreground animate-pulse"
-                    : "bg-foreground/40")
-                }
-              />
-              {streamStatus === "streaming"
-                ? "Streaming…"
-                : streamStatus === "done"
-                ? "Done"
-                : busy
-                ? "Running"
-                : "Idle"}
+            <div className="flex items-center gap-2 shrink-0">
+              {activeSession && (
+                <ModelPicker
+                  value={activeSession.model}
+                  onChange={(m) => setSessionModel(activeSession.id, m)}
+                  disabled={busy}
+                />
+              )}
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                <span
+                  className={
+                    "size-1.5 rounded-full " +
+                    (streamStatus === "streaming"
+                      ? "bg-emerald-500 animate-pulse"
+                      : streamStatus === "done"
+                      ? "bg-emerald-500"
+                      : busy
+                      ? "bg-foreground animate-pulse"
+                      : "bg-foreground/40")
+                  }
+                />
+                {streamStatus === "streaming"
+                  ? "Streaming…"
+                  : streamStatus === "done"
+                  ? "Done"
+                  : busy
+                  ? "Running"
+                  : "Idle"}
+              </div>
             </div>
           </div>
         </header>
