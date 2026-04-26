@@ -36,7 +36,7 @@ import remarkGfm from "remark-gfm";
 import { Logo } from "../components/site/Logo";
 import { useAuth } from "../hooks/use-auth";
 import { supabase } from "../integrations/supabase/client";
-import { useCredits, costFromUsage, estimateCost } from "../hooks/use-credits";
+import { useCredits, costFromUsage, estimateCost, type Tier } from "../hooks/use-credits";
 import { CreditsBadge, UpgradeDialog } from "../components/credits/UpgradeDialog";
 import { Lock } from "lucide-react";
 
@@ -420,6 +420,8 @@ function AgentApp() {
   const { credits, consume, redeemCode, refresh: refreshCredits } = useCredits();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [creditError, setCreditError] = useState<string | null>(null);
+  /** Last completed message's actual credit cost (null until first send). */
+  const [lastCost, setLastCost] = useState<{ amount: number; tier: Tier; at: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1100,6 +1102,9 @@ function AgentApp() {
             `${finalCost} credit${finalCost === 1 ? "" : "s"} · ${result.balance} left`,
           );
         }
+        // Always record the actual cost (even if 0) so users see the live update
+        // replace the pre-send estimate after each round trip.
+        setLastCost({ amount: finalCost, tier: effectiveTier, at: Date.now() });
       } catch (e) {
         console.error("[credits] charge failed", e);
       }
@@ -1395,28 +1400,51 @@ function AgentApp() {
           </div>
         )}
         <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-xl">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="max-w-3xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="md:hidden inline-flex items-center justify-center size-9 -ml-2 rounded-md hover:bg-muted"
+                className="md:hidden inline-flex items-center justify-center size-9 -ml-1 rounded-md hover:bg-muted shrink-0"
                 aria-label="Open chats"
               >
                 <PanelLeft className="size-4" />
               </button>
               <Link
                 to="/"
-                className="hidden md:inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                className="hidden md:inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0"
               >
                 <ArrowLeft className="size-4" />
                 <span>Home</span>
               </Link>
-              <span className="hidden md:inline text-muted-foreground">·</span>
-              <span className="font-medium tracking-tight text-[15px] truncate">
+              <span className="hidden md:inline text-muted-foreground shrink-0">·</span>
+              {/* Live status dot — replaces noisy "Idle/Streaming/Done" text */}
+              <span
+                aria-hidden
+                className={
+                  "size-1.5 rounded-full shrink-0 " +
+                  (streamStatus === "streaming"
+                    ? "bg-emerald-500 animate-pulse"
+                    : streamStatus === "done"
+                    ? "bg-emerald-500"
+                    : busy
+                    ? "bg-foreground animate-pulse"
+                    : "bg-foreground/30")
+                }
+                title={
+                  streamStatus === "streaming"
+                    ? "Streaming"
+                    : streamStatus === "done"
+                    ? "Done"
+                    : busy
+                    ? "Running"
+                    : "Ready"
+                }
+              />
+              <span className="font-medium tracking-tight text-[14px] sm:text-[15px] truncate">
                 {activeSession?.title ?? "New chat"}
               </span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <CreditsBadge credits={credits} onUpgrade={() => setUpgradeOpen(true)} />
               {activeSession && (
                 <ModelPicker
@@ -1426,27 +1454,6 @@ function AgentApp() {
                   museumLocked={credits?.tier !== "museum"}
                 />
               )}
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                <span
-                  className={
-                    "size-1.5 rounded-full " +
-                    (streamStatus === "streaming"
-                      ? "bg-emerald-500 animate-pulse"
-                      : streamStatus === "done"
-                      ? "bg-emerald-500"
-                      : busy
-                      ? "bg-foreground animate-pulse"
-                      : "bg-foreground/40")
-                  }
-                />
-                {streamStatus === "streaming"
-                  ? "Streaming…"
-                  : streamStatus === "done"
-                  ? "Done"
-                  : busy
-                  ? "Running"
-                  : "Idle"}
-              </div>
             </div>
           </div>
         </header>
@@ -1617,11 +1624,18 @@ function AgentApp() {
                 </button>
               )}
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground text-center">
-              {busy
-                ? "Click stop to abort the run mid-execution."
-                : "Demo agent · Connect OpenClaw, E2B & Weaviate to go live."}
-            </p>
+            <CostHint
+              input={input}
+              busy={busy}
+              tier={
+                (activeSession?.model ?? DEFAULT_MODE) === "museum" && credits?.tier === "museum"
+                  ? "museum"
+                  : "park"
+              }
+              balance={credits?.balance ?? 0}
+              lastCost={lastCost}
+              streamStatus={streamStatus}
+            />
           </form>
         </div>
       </div>
@@ -2446,6 +2460,89 @@ function AssistantMarkdown({
   );
 }
 
+/* ========== CostHint — live credit estimate / actual cost under composer ========== */
+
+function CostHint({
+  input,
+  busy,
+  tier,
+  balance,
+  lastCost,
+  streamStatus,
+}: {
+  input: string;
+  busy: boolean;
+  tier: Tier;
+  balance: number;
+  lastCost: { amount: number; tier: Tier; at: number } | null;
+  streamStatus: "idle" | "streaming" | "done";
+}) {
+  // While streaming, show "calculating real cost…"
+  // After response arrives (status=done), surface the actual final cost briefly.
+  // Otherwise, show pre-flight estimate based on the current draft.
+  const trimmed = input.trim();
+  const estimate = trimmed.length > 0 ? estimateCost(tier, trimmed) : 0;
+  // Show the actual charge briefly after a response finishes. Stays visible for
+  // ~6s as long as the user hasn't started typing the next prompt.
+  const justFinished = !busy && lastCost && Date.now() - lastCost.at < 6000;
+  const showActual = justFinished && (streamStatus === "done" || trimmed.length === 0);
+  const insufficient = !busy && trimmed.length > 0 && estimate > balance;
+
+  let body: React.ReactNode;
+  if (busy && streamStatus === "streaming") {
+    body = (
+      <span className="inline-flex items-center gap-1.5">
+        <Loader2 className="size-3 animate-spin" />
+        Calculating real token cost…
+      </span>
+    );
+  } else if (showActual && lastCost) {
+    body = (
+      <span className="inline-flex items-center gap-1.5">
+        <Sparkles className="size-3 text-emerald-500" />
+        <span className="text-foreground/80">
+          Charged <span className="font-mono">{lastCost.amount}</span>{" "}
+          credit{lastCost.amount === 1 ? "" : "s"}
+        </span>
+        <span className="opacity-60">·</span>
+        <span>{balance.toLocaleString()} left</span>
+      </span>
+    );
+  } else if (trimmed.length > 0) {
+    body = (
+      <span className="inline-flex items-center gap-1.5 flex-wrap justify-center">
+        <span className={insufficient ? "text-red-500" : "text-muted-foreground"}>
+          Estimated cost
+        </span>
+        <span
+          className={
+            "font-mono px-1.5 py-0.5 rounded border " +
+            (insufficient
+              ? "border-red-500/40 text-red-500 bg-red-500/5"
+              : "border-border text-foreground/80")
+          }
+        >
+          ~{estimate} {estimate === 1 ? "credit" : "credits"}
+        </span>
+        <span className="opacity-60">·</span>
+        <span>final cost from real token usage</span>
+      </span>
+    );
+  } else {
+    body = (
+      <span>
+        {tier === "museum" ? "Museum mode · greetings free" : "Park mode · 100 free credits/day"}
+      </span>
+    );
+  }
+
+  return (
+    <p className="mt-2 text-[11px] text-muted-foreground text-center px-2">
+      {body}
+    </p>
+  );
+}
+
 /* ========== ModePicker ========== */
 
 function ModelPicker({
@@ -2482,7 +2579,7 @@ function ModelPicker({
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         className={
-          "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-colors disabled:opacity-50 " +
+          "inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-colors disabled:opacity-50 shrink-0 " +
           (isPremium
             ? "border-foreground bg-foreground text-background hover:opacity-90"
             : "border-border hover:bg-muted")
@@ -2496,7 +2593,7 @@ function ModelPicker({
         <ChevronDown className="size-3" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-1.5 w-72 rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
+        <div className="absolute right-0 mt-1.5 w-[min(18rem,calc(100vw-1.5rem))] rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
           <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground border-b border-border">
             Discoverse mode
           </div>
