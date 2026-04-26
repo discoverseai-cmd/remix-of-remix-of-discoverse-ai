@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Database } from "@/integrations/supabase/types";
 
 const InputSchema = z.object({
-  accessToken: z.string().min(1),
+  accessToken: z.string(),
   sessionId: z.string().uuid(),
   input: z.string().min(1).max(20000),
   model: z.string().min(1).max(120).optional(),
