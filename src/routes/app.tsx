@@ -1751,11 +1751,17 @@ function RunTimeline({
   open,
   onToggle,
   streaming,
+  stopReason,
+  errorMessage,
+  className = "",
 }: {
   events: TimelineEvent[];
   open: boolean;
   onToggle: () => void;
   streaming?: boolean;
+  stopReason?: string;
+  errorMessage?: string;
+  className?: string;
 }) {
   const iconFor = (k: TimelineEventKind) => {
     switch (k) {
@@ -1785,8 +1791,27 @@ function RunTimeline({
       second: "2-digit",
     });
   };
+  const reason = stopReason && !streaming ? stopReason : null;
+  const reasonStyle =
+    reason === "completed"
+      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+      : reason === "user stopped"
+      ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+      : reason === "error"
+      ? "bg-destructive/10 text-destructive border-destructive/30"
+      : "bg-muted text-muted-foreground border-border";
+  const reasonLabel =
+    reason === "completed"
+      ? "Completed"
+      : reason === "user stopped"
+      ? "User stopped"
+      : reason === "error"
+      ? "Error"
+      : reason ?? "";
+  const ReasonIcon =
+    reason === "completed" ? Check : reason === "user stopped" ? Square : reason === "error" ? X : Activity;
   return (
-    <div className="border border-border rounded-xl bg-muted/30 overflow-hidden">
+    <div className={"border border-border rounded-xl bg-muted/30 overflow-hidden " + className}>
       <button
         type="button"
         onClick={onToggle}
@@ -1802,18 +1827,55 @@ function RunTimeline({
           Run timeline
           <span className="text-foreground/70">· {events.length}</span>
         </span>
-        {streaming && (
+        {streaming ? (
           <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-400">
             <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
             streaming
           </span>
-        )}
+        ) : reason ? (
+          <span
+            className={
+              "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-mono uppercase tracking-[0.16em] " +
+              reasonStyle
+            }
+          >
+            <ReasonIcon className="size-3" />
+            {reasonLabel}
+          </span>
+        ) : null}
       </button>
+      {reason && (
+        <div className={"px-4 py-2.5 border-t border-b text-sm flex items-start gap-2.5 " + reasonStyle}>
+          <ReasonIcon className="size-4 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium">Stop reason: {reasonLabel}</p>
+            {errorMessage && reason === "error" && (
+              <a
+                href="#error-details"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (!open) onToggle();
+                  requestAnimationFrame(() => {
+                    document
+                      .getElementById("error-details")
+                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  });
+                }}
+                className="mt-0.5 block text-xs underline underline-offset-2 opacity-90 hover:opacity-100 truncate"
+                title={errorMessage}
+              >
+                {errorMessage}
+              </a>
+            )}
+          </div>
+        </div>
+      )}
       {open && (
         <ol className="divide-y divide-border">
           {events.map((e) => (
             <li
               key={e.id}
+              id={e.kind === "error" ? "error-details" : undefined}
               className="px-4 py-2 flex items-start gap-3 text-sm font-mono"
             >
               <span className="mt-0.5">{iconFor(e.kind)}</span>
