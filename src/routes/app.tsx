@@ -629,8 +629,6 @@ function AgentApp() {
     setAttachError(null);
     if (attachments.length) setLastSent(attachments);
     setReuseLast(false);
-    setBusy(true);
-    setStreamStatus("idle");
     const events: TimelineEvent[] = [];
     const pushEvent = (
       kind: TimelineEventKind,
