@@ -117,46 +117,58 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour signed URLs
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
 const MAX_FILES_PER_MESSAGE = 10;
 const CHAT_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
-const DEFAULT_MODEL: ModelChoice = "auto";
+const DEFAULT_MODE: ModeChoice = "park";
 
-type ModelOption = {
-  value: ModelChoice;
+type ModeOption = {
+  value: ModeChoice;
   label: string;
+  tagline: string;
   hint: string;
+  badge: string;
 };
 
-const MODEL_OPTIONS: ModelOption[] = [
-  { value: "auto", label: "Auto", hint: "Pick best model per prompt" },
-  { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", hint: "Long context · research · vision" },
-  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", hint: "Fast multimodal · balanced" },
-  { value: "openai/gpt-5", label: "GPT-5", hint: "Top reasoning · coding" },
-  { value: "openai/gpt-5-mini", label: "GPT-5 Mini", hint: "Quick coding · low cost" },
+const MODE_OPTIONS: ModeOption[] = [
+  {
+    value: "park",
+    label: "Discoverse Park",
+    tagline: "Free · default",
+    hint: "Quick, lightweight responses for everyday chats.",
+    badge: "Free",
+  },
+  {
+    value: "museum",
+    label: "Discoverse Museum",
+    tagline: "Premium · upgrade",
+    hint: "Higher-quality reasoning, longer context, deeper craft.",
+    badge: "Pro",
+  },
 ];
 
-const MODEL_LABEL: Record<ModelChoice, string> = MODEL_OPTIONS.reduce(
+const MODE_LABEL: Record<ModeChoice, string> = MODE_OPTIONS.reduce(
   (acc, o) => ({ ...acc, [o.value]: o.label }),
-  {} as Record<ModelChoice, string>,
+  {} as Record<ModeChoice, string>,
 );
 
 /**
- * Auto model router. Inspects the latest user message + attachments and
- * returns a concrete model id, never "auto".
- *  - Image attachments / "image" / "research" / very long prompts → Gemini Pro
- *  - Coding/quick/tool/short prompts → GPT-5 Mini
- *  - Default balance → Gemini Flash
+ * Internal mode router. Picks a concrete underlying model for a given
+ * Discoverse mode + the latest user prompt/attachments. The exact model id is
+ * never shown to the user — the UI only ever exposes "Park" or "Museum".
+ *
+ *  - park    → fast / low-cost models (flash-lite, mini)
+ *  - museum  → mid-to-high quality models (pro, gpt-5) with smart routing
+ *              based on prompt intent and attachments.
  */
-function autoPickModel(
+function pickModelForMode(
+  mode: ModeChoice,
   prompt: string,
   attachments: { mime: string }[] | undefined,
-): Exclude<ModelChoice, "auto"> {
+): string {
   const text = prompt.toLowerCase();
   const hasImage = (attachments ?? []).some((a) => a.mime?.startsWith("image/"));
   const hasMedia = (attachments ?? []).some(
     (a) => a.mime?.startsWith("video/") || a.mime?.startsWith("audio/"),
   );
   const longPrompt = prompt.length > 1200;
-
-  const wantsImage = /\b(image|picture|photo|diagram|chart|screenshot|visual|render)\b/.test(text);
   const wantsResearch =
     /\b(research|deep dive|analy[sz]e|literature|paper|book|long|continuous|ongoing|summari[sz]e)\b/.test(
       text,
@@ -167,13 +179,21 @@ function autoPickModel(
     ) || /```/.test(prompt);
   const wantsQuick = /\b(quick|fast|tldr|short|one[- ]liner|brief)\b/.test(text);
 
-  if (hasImage || hasMedia || wantsImage || wantsResearch || longPrompt) {
+  if (mode === "park") {
+    // Free tier: keep it cheap and fast. Bump only when an image is attached
+    // (a vision-capable cheap model is required to actually see it).
+    if (hasImage || hasMedia) return "google/gemini-2.5-flash";
+    if (wantsQuick) return "google/gemini-2.5-flash-lite";
+    return "google/gemini-2.5-flash-lite";
+  }
+
+  // museum (premium): prioritise quality.
+  if (hasImage || hasMedia || wantsResearch || longPrompt) {
     return "google/gemini-2.5-pro";
   }
   if (wantsCode && wantsQuick) return "openai/gpt-5-mini";
   if (wantsCode) return "openai/gpt-5";
-  if (wantsQuick) return "google/gemini-2.5-flash";
-  return "google/gemini-2.5-flash";
+  return "google/gemini-2.5-pro";
 }
 
 const SUGGESTIONS = [
