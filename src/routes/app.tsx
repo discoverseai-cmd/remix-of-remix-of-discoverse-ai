@@ -1018,6 +1018,9 @@ function AgentApp() {
               tokenCount += 1;
               updateAssistant(acc);
             }
+            if (parsed.usage) {
+              usage = parsed.usage;
+            }
           } catch {
             buffer = line + "\n" + buffer;
             break;
