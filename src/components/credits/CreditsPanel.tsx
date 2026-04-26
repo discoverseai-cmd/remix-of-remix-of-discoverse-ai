@@ -181,7 +181,8 @@ export function CreditsPanel() {
               Unlock Discoverse Museum
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              10,000 credits/month · best output · greetings free.
+              Premium output, longer context, greetings free. Charged from real token
+              usage — never a fixed per-message rate.
             </p>
           </div>
           <form onSubmit={onRedeem} className="flex gap-2">
