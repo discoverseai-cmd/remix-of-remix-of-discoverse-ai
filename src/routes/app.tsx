@@ -2228,3 +2228,178 @@ function UserMenu({
     </div>
   );
 }
+
+/* ========== AssistantMarkdown ========== */
+
+function AssistantMarkdown({
+  content,
+  streaming,
+}: {
+  content: string;
+  streaming?: boolean;
+}) {
+  return (
+    <div className="text-[15px] leading-relaxed text-foreground assistant-prose">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+          h1: ({ children }) => (
+            <h1 className="text-xl font-semibold mt-4 mb-2">{children}</h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="text-lg font-semibold mt-4 mb-2">{children}</h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="text-base font-semibold mt-3 mb-2">{children}</h3>
+          ),
+          ul: ({ children }) => (
+            <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>
+          ),
+          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline underline-offset-2 hover:text-foreground/80"
+            >
+              {children}
+            </a>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-border pl-3 text-muted-foreground my-3">
+              {children}
+            </blockquote>
+          ),
+          code: ({ inline, className, children, ...props }: any) => {
+            if (inline) {
+              return (
+                <code
+                  className="px-1 py-0.5 rounded bg-muted text-[0.9em] font-mono"
+                  {...props}
+                >
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => (
+            <pre className="my-3 rounded-lg bg-muted p-3 overflow-x-auto text-[13px] font-mono">
+              {children}
+            </pre>
+          ),
+          table: ({ children }) => (
+            <div className="my-3 overflow-x-auto">
+              <table className="w-full text-sm border-collapse">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th className="border border-border px-2 py-1 text-left font-medium bg-muted/40">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="border border-border px-2 py-1 align-top">{children}</td>
+          ),
+          hr: () => <hr className="my-4 border-border" />,
+        }}
+      >
+        {content || ""}
+      </ReactMarkdown>
+      {streaming && (
+        <span
+          aria-hidden
+          className="inline-block w-[2px] h-[1.05em] align-[-0.15em] bg-foreground/70 ml-0.5 animate-pulse"
+        />
+      )}
+    </div>
+  );
+}
+
+/* ========== ModelPicker ========== */
+
+function ModelPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ModelChoice;
+  onChange: (m: ModelChoice) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const current = MODEL_OPTIONS.find((o) => o.value === value) ?? MODEL_OPTIONS[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-[12px] font-medium hover:bg-muted disabled:opacity-50 transition-colors"
+        title="Choose model for this chat"
+      >
+        <Cpu className="size-3.5" />
+        <span className="hidden sm:inline">{current.label}</span>
+        <span className="sm:hidden">{value === "auto" ? "Auto" : current.label.split(" ")[0]}</span>
+        <ChevronDown className="size-3" />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1.5 w-64 rounded-xl border border-border bg-background shadow-lg z-30 overflow-hidden">
+          <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground border-b border-border">
+            Model for this chat
+          </div>
+          {MODEL_OPTIONS.map((opt) => {
+            const active = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                className={
+                  "w-full text-left px-3 py-2 hover:bg-muted transition-colors flex items-start gap-2 " +
+                  (active ? "bg-muted/60" : "")
+                }
+              >
+                <Check
+                  className={
+                    "size-3.5 mt-0.5 shrink-0 " + (active ? "opacity-100" : "opacity-0")
+                  }
+                />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium leading-tight">{opt.label}</div>
+                  <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                    {opt.hint}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
