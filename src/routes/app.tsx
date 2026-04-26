@@ -492,9 +492,7 @@ function AgentApp() {
               title: created.title,
               messages: [WELCOME],
               updatedAt: new Date(created.updated_at).getTime(),
-              model:
-                ((created as { model?: string | null }).model as ModeChoice | null) ??
-                DEFAULT_MODE,
+              model: coerceMode((created as { model?: string | null }).model),
             },
           ],
           activeId: created.id,
