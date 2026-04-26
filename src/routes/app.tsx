@@ -74,7 +74,11 @@ type Attachment = {
   size: number;
   mime: string;
   kind: AttachmentKind;
-  /** data: URL (small files) or null when too large to persist */
+  /** Path inside the chat-attachments storage bucket (set after upload). */
+  storagePath?: string | null;
+  /** Local-only File handle pending upload (not persisted, not serialized to DB). */
+  file?: File;
+  /** Live URL (signed, or local blob preview) — not persisted. */
   dataUrl: string | null;
 };
 type Message = {
@@ -98,8 +102,8 @@ type Store = {
   activeId: string;
 };
 
-const STORAGE_KEY = "discoverse.chat.v3";
-const MAX_PERSIST_BYTES = 5 * 1024 * 1024; // 5MB per file kept inline
+const ATTACHMENTS_BUCKET = "chat-attachments";
+const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour signed URLs
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
 const MAX_FILES_PER_MESSAGE = 10;
 const CHAT_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
