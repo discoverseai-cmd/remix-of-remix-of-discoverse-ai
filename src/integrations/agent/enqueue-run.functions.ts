@@ -15,20 +15,25 @@ type EnqueueAgentRunResult =
   | { ok: true; runId: string }
   | { ok: false; fallback: true; error: string; runId?: string };
 
-function getSupabaseEnv() {
+function getSupabaseEnv():
+  | { ok: true; url: string; key: string }
+  | { ok: false; error: string } {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) {
-    return { error: "Backend environment is not configured" as const };
+    return { ok: false, error: "Backend environment is not configured" };
   }
-  return { url, key };
+  return { ok: true, url, key };
 }
 
-function createUserClient(accessToken: string) {
+function createUserClient(accessToken: string):
+  | { ok: true; supabase: ReturnType<typeof createClient<Database>> }
+  | { ok: false; error: string } {
   const env = getSupabaseEnv();
-  if ("error" in env) return env;
+  if (!env.ok) return env;
 
   return {
+    ok: true,
     supabase: createClient<Database>(env.url, env.key, {
       global: {
         headers: {
