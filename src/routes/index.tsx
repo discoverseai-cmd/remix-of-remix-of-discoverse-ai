@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Nav } from "@/components/site/Nav";
-import { Hero } from "@/components/site/Hero";
-import { Capabilities } from "@/components/site/Capabilities";
-import { Architecture } from "@/components/site/Architecture";
-import { Workflow } from "@/components/site/Workflow";
-import { CTA } from "@/components/site/CTA";
-import { Footer } from "@/components/site/Footer";
+import { Nav } from "../components/site/Nav";
+import { Hero } from "../components/site/Hero";
+import { Capabilities } from "../components/site/Capabilities";
+import { Architecture } from "../components/site/Architecture";
+import { Workflow } from "../components/site/Workflow";
+import { CTA } from "../components/site/CTA";
+import { Footer } from "../components/site/Footer";
 
 export const Route = createFileRoute("/")({
   component: Index,
