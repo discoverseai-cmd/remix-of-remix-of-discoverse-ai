@@ -215,6 +215,19 @@ function SettingsPage() {
             </form>
           </section>
 
+          {/* Credits & usage */}
+          <section className="space-y-4">
+            <header>
+              <h2 className="text-sm font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                Credits & usage
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                See your current balance, how each chat is charged, and recent activity.
+              </p>
+            </header>
+            <CreditsPanel />
+          </section>
+
           {/* Connected providers */}
           <section className="space-y-4">
             <header>
