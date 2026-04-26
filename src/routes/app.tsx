@@ -799,20 +799,6 @@ function AgentApp() {
         finalContent = errorMsg;
         stopReason = "error";
       }
-      updateAssistant(finalContent, {
-        interrupted: interrupted || (!!errorMsg && !acc),
-      });
-
-      // Persist final assistant message
-      void supabase.from("chat_messages").insert({
-        id: assistantId,
-        session_id: sessionId,
-        user_id: user.id,
-        role: "agent",
-        content: finalContent,
-        interrupted: interrupted || (!!errorMsg && !acc),
-      });
-
       if (tokenCount > 0) {
         pushEvent("tokens", "Tokens streamed", `${tokenCount} chunks · ${acc.length} chars`);
       }
@@ -820,6 +806,26 @@ function AgentApp() {
         pushEvent("error", "Error", errorMsg);
       }
       pushEvent("stream_end", "Stream closed", `stop: ${stopReason}`);
+
+      const finalTimeline = [...events];
+      updateAssistant(finalContent, {
+        interrupted: interrupted || (!!errorMsg && !acc),
+        timeline: finalTimeline,
+        stopReason,
+      });
+
+      // Persist final assistant message (with timeline + stop reason)
+      void supabase.from("chat_messages").insert({
+        id: assistantId,
+        session_id: sessionId,
+        user_id: user.id,
+        role: "agent",
+        content: finalContent,
+        interrupted: interrupted || (!!errorMsg && !acc),
+        timeline: finalTimeline,
+        stop_reason: stopReason,
+      });
+
       setActiveSteps([]);
       setBusy(false);
       setStreamStatus("done");
