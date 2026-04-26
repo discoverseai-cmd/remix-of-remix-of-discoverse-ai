@@ -242,6 +242,12 @@ async function fileToAttachment(file: File): Promise<Attachment> {
 }
 
 function AgentApp() {
+  const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
+  useEffect(() => {
+    if (!authLoading && !user) navigate({ to: "/auth" });
+  }, [user, authLoading, navigate]);
+
   const [hydrated, setHydrated] = useState(false);
   const [store, setStore] = useState<Store>(() => {
     const s = newSession();
@@ -260,6 +266,8 @@ function AgentApp() {
   const [attachError, setAttachError] = useState<string | null>(null);
   const [lastSent, setLastSent] = useState<Attachment[]>([]);
   const [reuseLast, setReuseLast] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
