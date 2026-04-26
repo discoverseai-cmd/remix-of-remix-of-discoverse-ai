@@ -1539,7 +1539,13 @@ function AgentApp() {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({
+  message,
+  streaming = false,
+}: {
+  message: Message;
+  streaming?: boolean;
+}) {
   const isUser = message.role === "user";
   const [timelineOpen, setTimelineOpen] = useState(false);
   return (
