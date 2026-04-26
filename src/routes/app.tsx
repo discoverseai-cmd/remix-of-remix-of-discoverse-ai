@@ -1117,10 +1117,22 @@ function AgentApp() {
               <span
                 className={
                   "size-1.5 rounded-full " +
-                  (busy ? "bg-foreground animate-pulse" : "bg-foreground/40")
+                  (streamStatus === "streaming"
+                    ? "bg-emerald-500 animate-pulse"
+                    : streamStatus === "done"
+                    ? "bg-emerald-500"
+                    : busy
+                    ? "bg-foreground animate-pulse"
+                    : "bg-foreground/40")
                 }
               />
-              {busy ? "Running" : "Idle"}
+              {streamStatus === "streaming"
+                ? "Streaming…"
+                : streamStatus === "done"
+                ? "Done"
+                : busy
+                ? "Running"
+                : "Idle"}
             </div>
           </div>
         </header>
