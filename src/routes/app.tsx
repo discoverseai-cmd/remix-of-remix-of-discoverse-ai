@@ -922,7 +922,7 @@ function AgentApp() {
     const modelEventDetail = MODE_LABEL[sessionMode];
 
     try {
-      pushEvent("request", "Request sent", `model ${modelEventDetail}`);
+      pushEvent("request", "Request sent", `${modelEventDetail}`);
       const resp = await fetch(CHAT_FN_URL, {
         method: "POST",
         signal,
