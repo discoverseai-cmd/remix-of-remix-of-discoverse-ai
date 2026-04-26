@@ -1624,11 +1624,18 @@ function AgentApp() {
                 </button>
               )}
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground text-center">
-              {busy
-                ? "Click stop to abort the run mid-execution."
-                : "Demo agent · Connect OpenClaw, E2B & Weaviate to go live."}
-            </p>
+            <CostHint
+              input={input}
+              busy={busy}
+              tier={
+                (activeSession?.model ?? DEFAULT_MODE) === "museum" && credits?.tier === "museum"
+                  ? "museum"
+                  : "park"
+              }
+              balance={credits?.balance ?? 0}
+              lastCost={lastCost}
+              streamStatus={streamStatus}
+            />
           </form>
         </div>
       </div>
