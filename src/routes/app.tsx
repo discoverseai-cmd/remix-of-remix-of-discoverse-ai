@@ -876,8 +876,16 @@ function AgentApp() {
       });
     };
 
+    const sessionModel = activeSession?.model ?? DEFAULT_MODEL;
+    const resolvedModel: Exclude<ModelChoice, "auto"> =
+      sessionModel === "auto" ? autoPickModel(trimmed, attachments) : sessionModel;
+    const modelEventDetail =
+      sessionModel === "auto"
+        ? `auto → ${MODEL_LABEL[resolvedModel]}`
+        : MODEL_LABEL[resolvedModel];
+
     try {
-      pushEvent("request", "Request sent", `model ${CHAT_MODEL}`);
+      pushEvent("request", "Request sent", `model ${modelEventDetail}`);
       const resp = await fetch(CHAT_FN_URL, {
         method: "POST",
         signal,
@@ -886,7 +894,7 @@ function AgentApp() {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          model: CHAT_MODEL,
+          model: resolvedModel,
           messages: convo.map((m) => ({
             role: m.role,
             content: m.content,
