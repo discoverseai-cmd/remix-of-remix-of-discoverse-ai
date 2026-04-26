@@ -343,6 +343,10 @@ function AgentApp() {
     abortRef.current?.abort();
     setActiveSteps([]);
     setBusy(false);
+    setPending([]);
+    setLastSent([]);
+    setReuseLast(false);
+    setAttachError(null);
     setStore((prev) => ({ ...prev, activeId: id }));
     setSidebarOpen(false);
   }
@@ -351,6 +355,10 @@ function AgentApp() {
     abortRef.current?.abort();
     setActiveSteps([]);
     setBusy(false);
+    setPending([]);
+    setLastSent([]);
+    setReuseLast(false);
+    setAttachError(null);
     const s = newSession();
     setStore((prev) => ({
       sessions: [s, ...prev.sessions],
