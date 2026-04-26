@@ -33,10 +33,14 @@ export const Route = createRootRoute({
       { name: "description", content: "Discoverse AI is an OpenClaw-based autonomous agent platform with E2B sandboxed execution and Weaviate long-term vector memory." },
       { name: "author", content: "Discoverse AI" },
       { property: "og:title", content: "Discoverse AI — Autonomous Agent Platform" },
-      { property: "og:description", content: "OpenClaw super agents with E2B sandboxes and Weaviate vector memory. True automation, precision calibrated." },
+      { property: "og:description", content: "Discoverse AI is an OpenClaw-based autonomous agent platform with E2B sandboxed execution and Weaviate long-term vector memory." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Discoverse AI — Autonomous Agent Platform" },
+      { name: "twitter:description", content: "Discoverse AI is an OpenClaw-based autonomous agent platform with E2B sandboxed execution and Weaviate long-term vector memory." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/14883008-93c5-4e82-a5c0-ac07a4d5c73e/id-preview-98134d1c--4f282aec-b9a8-4b66-ac4a-32e964bf352e.lovable.app-1777207820487.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/14883008-93c5-4e82-a5c0-ac07a4d5c73e/id-preview-98134d1c--4f282aec-b9a8-4b66-ac4a-32e964bf352e.lovable.app-1777207820487.png" },
     ],
     links: [
       {
