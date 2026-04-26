@@ -24,6 +24,8 @@ export type Database = {
           role: string
           session_id: string
           steps: Json | null
+          stop_reason: string | null
+          timeline: Json | null
           user_id: string
         }
         Insert: {
@@ -35,6 +37,8 @@ export type Database = {
           role: string
           session_id: string
           steps?: Json | null
+          stop_reason?: string | null
+          timeline?: Json | null
           user_id: string
         }
         Update: {
@@ -46,6 +50,8 @@ export type Database = {
           role?: string
           session_id?: string
           steps?: Json | null
+          stop_reason?: string | null
+          timeline?: Json | null
           user_id?: string
         }
         Relationships: [
