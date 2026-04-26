@@ -1102,6 +1102,9 @@ function AgentApp() {
             `${finalCost} credit${finalCost === 1 ? "" : "s"} · ${result.balance} left`,
           );
         }
+        // Always record the actual cost (even if 0) so users see the live update
+        // replace the pre-send estimate after each round trip.
+        setLastCost({ amount: finalCost, tier: effectiveTier, at: Date.now() });
       } catch (e) {
         console.error("[credits] charge failed", e);
       }
