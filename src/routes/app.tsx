@@ -1418,7 +1418,17 @@ function TraceCard({
   );
 }
 
-function UserMenu({ email, collapsed }: { email: string; collapsed?: boolean }) {
+function UserMenu({
+  email,
+  collapsed,
+  running,
+  activeTitle,
+}: {
+  email: string;
+  collapsed?: boolean;
+  running?: boolean;
+  activeTitle?: string;
+}) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1447,18 +1457,80 @@ function UserMenu({ email, collapsed }: { email: string; collapsed?: boolean }) 
         aria-expanded={open}
         title={email || "Account"}
       >
-        <span className="size-8 rounded-full bg-foreground text-background inline-flex items-center justify-center text-xs font-medium shrink-0">
-          {initial}
+        <span className="relative shrink-0">
+          <span className="size-8 rounded-full bg-foreground text-background inline-flex items-center justify-center text-xs font-medium">
+            {initial}
+          </span>
+          {running && (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full bg-emerald-500 ring-2 ring-background"
+              aria-label="Agent running"
+            >
+              <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-75" />
+            </span>
+          )}
         </span>
         {!collapsed && (
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium truncate">
-              {email.split("@")[0] || "Account"}
+            <span className="flex items-center gap-1.5">
+              <span className="text-sm font-medium truncate">
+                {email.split("@")[0] || "Account"}
+              </span>
+              {running && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[9px] font-mono uppercase tracking-[0.14em] shrink-0">
+                  <span className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                  Live
+                </span>
+              )}
             </span>
-            <span className="block text-[11px] text-muted-foreground truncate">
-              {email || "Signed in"}
+            <span
+              className="block text-[11px] text-muted-foreground truncate"
+              title={running ? `Running: ${activeTitle}` : email}
+            >
+              {running ? `Running · ${activeTitle ?? "session"}` : email || "Signed in"}
             </span>
           </span>
+        )}
+      </button>
+      {open && (
+        <div
+          className={
+            "absolute bottom-full mb-2 w-56 rounded-xl border border-border bg-background shadow-lg overflow-hidden z-50 " +
+            (collapsed ? "left-0" : "left-0 right-0 w-auto")
+          }
+        >
+          <div className="px-3 py-2.5 border-b border-border">
+            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              Signed in
+            </p>
+            <p className="mt-0.5 text-sm truncate">{email || "—"}</p>
+            {running && (
+              <p className="mt-1 inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-400">
+                <span className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="truncate">Running · {activeTitle}</span>
+              </p>
+            )}
+          </div>
+          <Link
+            to="/settings"
+            onClick={() => setOpen(false)}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-muted transition-colors border-b border-border"
+          >
+            <UserCog className="size-3.5" />
+            Profile settings
+          </Link>
+          <button
+            onClick={signOut}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-muted transition-colors"
+          >
+            <LogOut className="size-3.5" />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
         )}
       </button>
       {open && (
