@@ -1625,6 +1625,37 @@ function AgentApp() {
           </form>
         </div>
       </div>
+
+      {creditError && (
+        <div
+          role="alert"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] sm:w-auto rounded-lg border border-red-500/40 bg-background shadow-lg px-4 py-3 text-sm flex items-start gap-3"
+        >
+          <Lock className="size-4 mt-0.5 text-red-500 shrink-0" />
+          <div className="flex-1">
+            <div className="font-medium text-foreground">Out of credits</div>
+            <div className="text-muted-foreground text-[12.5px] mt-0.5">{creditError}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCreditError(null)}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Dismiss"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
+      <UpgradeDialog
+        open={upgradeOpen}
+        onClose={() => {
+          setUpgradeOpen(false);
+          void refreshCredits();
+        }}
+        credits={credits}
+        onRedeem={redeemCode}
+      />
     </div>
   );
 }
