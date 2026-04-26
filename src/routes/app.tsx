@@ -970,6 +970,75 @@ function AgentApp() {
     const resolvedModel = pickModelForMode(routedMode, trimmed, attachments);
     const modelEventDetail = MODE_LABEL[routedMode];
 
+    // Fire the autonomous agent run on the external worker (LangGraph + tools).
+    // The worker streams steps into agent_steps via realtime; we surface them in
+    // the timeline as they arrive. Fire-and-forget alongside the chat stream below.
+    let agentRunChannel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      const { runId } = await enqueueAgentRun({
+        data: {
+          sessionId,
+          input: trimmed || "(no prompt — attachments only)",
+          model: resolvedModel,
+          messageId: userMsgId,
+        },
+      });
+      pushEvent("request", "Agent run queued", runId.slice(0, 8));
+      agentRunChannel = supabase
+        .channel(`agent-run-${runId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "agent_steps",
+            filter: `run_id=eq.${runId}`,
+          },
+          (payload) => {
+            const step = payload.new as AgentStepRow;
+            const label =
+              step.title ||
+              (step.tool ? `${step.kind} · ${step.tool}` : step.kind);
+            const detail =
+              step.content && step.content.length > 0
+                ? step.content.slice(0, 240)
+                : step.tool ?? undefined;
+            pushEvent("tokens", label, detail);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "agent_runs",
+            filter: `id=eq.${runId}`,
+          },
+          (payload) => {
+            const next = payload.new as { status?: string; error?: string | null };
+            if (next.status && next.status !== "running" && next.status !== "queued") {
+              pushEvent(
+                next.status === "succeeded" ? "stream_end" : "error",
+                `Agent run ${next.status}`,
+                next.error ?? undefined,
+              );
+              if (agentRunChannel) {
+                supabase.removeChannel(agentRunChannel);
+                agentRunChannel = null;
+              }
+            }
+          },
+        )
+        .subscribe();
+    } catch (err) {
+      console.warn("[agent] enqueue failed (chat continues):", err);
+      pushEvent(
+        "error",
+        "Agent worker unavailable",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
     try {
       pushEvent("request", "Request sent", `${modelEventDetail}`);
       const resp = await fetch(CHAT_FN_URL, {
