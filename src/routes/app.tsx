@@ -1049,9 +1049,6 @@ function AgentApp() {
         },
       });
       if (!result.ok) {
-        pushEvent("error", "Agent worker unavailable", result.error);
-        setActiveRunStatus("failed");
-        setActiveRunError(result.error);
         if (result.runId) setActiveRunId(result.runId);
         throw new Error(result.error);
       }
