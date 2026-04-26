@@ -81,6 +81,8 @@ const STORAGE_KEY = "discoverse.chat.v3";
 const MAX_PERSIST_BYTES = 5 * 1024 * 1024; // 5MB per file kept inline
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB hard cap
 const MAX_FILES_PER_MESSAGE = 10;
+const CHAT_FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const CHAT_MODEL = "google/gemini-2.5-flash";
 
 const SUGGESTIONS = [
   "Research the latest in autonomous agents and summarize",
