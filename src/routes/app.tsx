@@ -876,10 +876,41 @@ function AgentApp() {
               }}
             />
             {pending.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-2">
-                {pending.map((a) => (
-                  <PendingChip key={a.id} attachment={a} onRemove={() => removePending(a.id)} />
-                ))}
+              <div className="mb-2">
+                <div className="flex flex-wrap gap-2">
+                  {pending.map((a, i) => (
+                    <PendingChip
+                      key={a.id}
+                      attachment={a}
+                      index={i}
+                      total={pending.length}
+                      isDragging={dragId === a.id}
+                      isDragOver={dragOverId === a.id && dragId !== a.id}
+                      onRemove={() => removePending(a.id)}
+                      onDragStart={() => setDragId(a.id)}
+                      onDragEnter={() => dragId && setDragOverId(a.id)}
+                      onDragOver={(e) => {
+                        if (dragId) e.preventDefault();
+                      }}
+                      onDrop={() => {
+                        if (dragId) reorderPending(dragId, a.id);
+                        setDragId(null);
+                        setDragOverId(null);
+                      }}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setDragOverId(null);
+                      }}
+                      onMoveLeft={i > 0 ? () => reorderPending(a.id, pending[i - 1].id) : undefined}
+                      onMoveRight={i < pending.length - 1 ? () => reorderPending(a.id, pending[i + 1].id) : undefined}
+                    />
+                  ))}
+                </div>
+                {pending.length > 1 && (
+                  <p className="mt-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    Drag to reorder · order matches what you'll send
+                  </p>
+                )}
               </div>
             )}
             {lastSent.length > 0 && !busy && (
