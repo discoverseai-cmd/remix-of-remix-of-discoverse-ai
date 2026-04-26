@@ -1408,3 +1408,51 @@ function TraceCard({
     </div>
   );
 }
+
+function UserMenu({ email }: { email: string }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const initial = (email[0] ?? "?").toUpperCase();
+  async function signOut() {
+    await supabase.auth.signOut();
+    navigate({ to: "/auth" });
+  }
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="size-8 rounded-full bg-foreground text-background inline-flex items-center justify-center text-xs font-medium hover:opacity-90 transition-opacity"
+        aria-label="Account menu"
+        aria-expanded={open}
+      >
+        {initial}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-background shadow-lg overflow-hidden z-30">
+          <div className="px-3 py-2.5 border-b border-border">
+            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              Signed in
+            </p>
+            <p className="mt-0.5 text-sm truncate">{email || "—"}</p>
+          </div>
+          <button
+            onClick={signOut}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-muted transition-colors"
+          >
+            <LogOut className="size-3.5" />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
