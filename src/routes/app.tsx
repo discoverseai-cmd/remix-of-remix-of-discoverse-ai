@@ -1145,6 +1145,16 @@ function AgentApp() {
     send(input);
   }
 
+  // === Composer-side credit gate (mirrors the runtime check in `send`) ===
+  // Computed every render so the Send button reflects the current draft + balance.
+  const composerTier: Tier =
+    (activeSession?.model ?? DEFAULT_MODE) === "museum" && credits?.tier === "museum"
+      ? "museum"
+      : "park";
+  const composerEstimate = input.trim().length > 0 ? estimateCost(composerTier, input) : 0;
+  const insufficientCredits =
+    composerEstimate > 0 && (credits?.balance ?? 0) < composerEstimate;
+
   if (authLoading || !isReady || !user || !hydrated) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-background text-muted-foreground">
