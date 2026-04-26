@@ -253,6 +253,8 @@ function AgentApp() {
   const [pending, setPending] = useState<Attachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [lastSent, setLastSent] = useState<Attachment[]>([]);
+  const [reuseLast, setReuseLast] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
