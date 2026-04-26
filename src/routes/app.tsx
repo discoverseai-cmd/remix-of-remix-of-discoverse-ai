@@ -253,6 +253,8 @@ function AgentApp() {
   const [pending, setPending] = useState<Attachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [lastSent, setLastSent] = useState<Attachment[]>([]);
+  const [reuseLast, setReuseLast] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -341,6 +343,10 @@ function AgentApp() {
     abortRef.current?.abort();
     setActiveSteps([]);
     setBusy(false);
+    setPending([]);
+    setLastSent([]);
+    setReuseLast(false);
+    setAttachError(null);
     setStore((prev) => ({ ...prev, activeId: id }));
     setSidebarOpen(false);
   }
@@ -349,6 +355,10 @@ function AgentApp() {
     abortRef.current?.abort();
     setActiveSteps([]);
     setBusy(false);
+    setPending([]);
+    setLastSent([]);
+    setReuseLast(false);
+    setAttachError(null);
     const s = newSession();
     setStore((prev) => ({
       sessions: [s, ...prev.sessions],
@@ -407,8 +417,10 @@ function AgentApp() {
 
   async function send(text: string) {
     const trimmed = text.trim();
-    if ((!trimmed && pending.length === 0) || busy) return;
-    const attachments = pending;
+    // Combine current pending with reused-last attachments (dedup by id).
+    const reused = reuseLast ? lastSent.filter((a) => !pending.some((p) => p.id === a.id)) : [];
+    const attachments = [...pending, ...reused];
+    if ((!trimmed && attachments.length === 0) || busy) return;
     const userMsg: Message = {
       id: uid(),
       role: "user",
@@ -432,6 +444,8 @@ function AgentApp() {
     setInput("");
     setPending([]);
     setAttachError(null);
+    if (attachments.length) setLastSent(attachments);
+    setReuseLast(false);
     setBusy(true);
 
     const controller = new AbortController();
@@ -842,6 +856,22 @@ function AgentApp() {
                 ))}
               </div>
             )}
+            {lastSent.length > 0 && !busy && (
+              <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none w-fit">
+                <input
+                  type="checkbox"
+                  checked={reuseLast}
+                  onChange={(e) => setReuseLast(e.target.checked)}
+                  className="size-4 accent-foreground rounded"
+                />
+                <span>
+                  Use these attachments again
+                  <span className="ml-1.5 font-mono text-foreground/70">
+                    ({lastSent.length} file{lastSent.length === 1 ? "" : "s"})
+                  </span>
+                </span>
+              </label>
+            )}
             {attachError && (
               <p className="mb-2 text-[11px] text-foreground/70">{attachError}</p>
             )}
@@ -1011,33 +1041,63 @@ function AttachmentList({
   return (
     <div className={"flex flex-col gap-2 " + (alignEnd ? "items-end " : "") + className}>
       {images.length > 0 && (
-        <div
-          className={
-            "grid gap-2 " +
-            (images.length === 1
-              ? "grid-cols-1 max-w-xs"
-              : images.length === 2
-              ? "grid-cols-2 max-w-md"
-              : "grid-cols-2 sm:grid-cols-3 max-w-lg")
-          }
-        >
-          {images.map((a) => (
-            <a
-              key={a.id}
-              href={a.dataUrl!}
-              target="_blank"
-              rel="noreferrer"
-              className="block rounded-lg overflow-hidden border border-border bg-muted/40"
-            >
-              <img
-                src={a.dataUrl!}
-                alt={a.name}
-                className="w-full h-auto max-h-72 object-cover"
-                loading="lazy"
-              />
-            </a>
-          ))}
-        </div>
+        <>
+          {/* Mobile: horizontal snap carousel */}
+          <div
+            className={
+              "sm:hidden flex gap-2 overflow-x-auto snap-x snap-mandatory scroll-pl-1 -mx-1 px-1 pb-1 " +
+              "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
+              (alignEnd ? "justify-end" : "")
+            }
+            aria-label={`${images.length} image${images.length === 1 ? "" : "s"}`}
+          >
+            {images.map((a) => (
+              <a
+                key={a.id}
+                href={a.dataUrl!}
+                target="_blank"
+                rel="noreferrer"
+                className="snap-start shrink-0 block rounded-lg overflow-hidden border border-border bg-muted/40 active:opacity-90 transition-opacity"
+                style={{ width: images.length === 1 ? "min(85vw, 18rem)" : "min(70vw, 14rem)" }}
+              >
+                <img
+                  src={a.dataUrl!}
+                  alt={a.name}
+                  className="w-full h-auto max-h-64 object-cover"
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+          {/* Desktop / tablet: grid */}
+          <div
+            className={
+              "hidden sm:grid gap-2 " +
+              (images.length === 1
+                ? "grid-cols-1 max-w-xs"
+                : images.length === 2
+                ? "grid-cols-2 max-w-md"
+                : "grid-cols-2 md:grid-cols-3 max-w-lg")
+            }
+          >
+            {images.map((a) => (
+              <a
+                key={a.id}
+                href={a.dataUrl!}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-lg overflow-hidden border border-border bg-muted/40"
+              >
+                <img
+                  src={a.dataUrl!}
+                  alt={a.name}
+                  className="w-full h-auto max-h-72 object-cover"
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+        </>
       )}
       {others.map((a) => (
         <AttachmentCard key={a.id} attachment={a} />
@@ -1074,12 +1134,12 @@ function AttachmentCard({ attachment }: { attachment: Attachment }) {
     );
   }
 
-  return (
-    <div className="border border-border rounded-xl bg-background max-w-md inline-flex items-center gap-3 p-3">
+  const inner = (
+    <>
       <div className="size-10 rounded-md bg-muted inline-flex items-center justify-center text-muted-foreground shrink-0">
         {kindIcon(kind)}
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 text-left">
         <p className="text-sm font-medium truncate">{name}</p>
         <p className="text-[11px] font-mono text-muted-foreground">
           {formatBytes(size)} · {kind}
@@ -1087,17 +1147,23 @@ function AttachmentCard({ attachment }: { attachment: Attachment }) {
         </p>
       </div>
       {dataUrl && (
-        <a
-          href={dataUrl}
-          download={name}
-          className="size-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-          aria-label="Download"
-          title="Download"
-        >
-          <Download className="size-4" />
-        </a>
+        <Download className="size-4 text-muted-foreground shrink-0" aria-hidden />
       )}
-    </div>
+    </>
+  );
+  const cls =
+    "border border-border rounded-xl bg-background w-full max-w-md flex items-center gap-3 p-3 min-h-12 transition-colors";
+  return dataUrl ? (
+    <a
+      href={dataUrl}
+      download={name}
+      className={cls + " hover:bg-muted active:bg-muted"}
+      aria-label={`Download ${name}`}
+    >
+      {inner}
+    </a>
+  ) : (
+    <div className={cls + " opacity-90"}>{inner}</div>
   );
 }
 
