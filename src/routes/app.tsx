@@ -145,46 +145,6 @@ function planSteps(): Step[] {
   ];
 }
 
-function loadStore(): Store {
-  if (typeof window === "undefined") {
-    const s = newSession();
-    return { sessions: [s], activeId: s.id };
-  }
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Store;
-      if (parsed?.sessions?.length) {
-        const activeId = parsed.sessions.some((s) => s.id === parsed.activeId)
-          ? parsed.activeId
-          : parsed.sessions[0].id;
-        return { sessions: parsed.sessions, activeId };
-      }
-    }
-    // Migrate older session storage (v2) or single-chat (v1).
-    const v2 = window.localStorage.getItem("discoverse.chat.v2");
-    if (v2) {
-      const parsed = JSON.parse(v2) as Store;
-      if (parsed?.sessions?.length) return parsed;
-    }
-    const legacy = window.localStorage.getItem("discoverse.chat.v1");
-    if (legacy) {
-      const messages = JSON.parse(legacy) as Message[];
-      const s: Session = {
-        id: uid(),
-        title: deriveTitle(messages) ?? "Previous chat",
-        messages: messages?.length ? messages : [WELCOME],
-        updatedAt: Date.now(),
-      };
-      return { sessions: [s], activeId: s.id };
-    }
-  } catch {
-    /* ignore */
-  }
-  const s = newSession();
-  return { sessions: [s], activeId: s.id };
-}
-
 function deriveTitle(messages: Message[]): string | null {
   const firstUser = messages.find((m) => m.role === "user");
   if (!firstUser) return null;
