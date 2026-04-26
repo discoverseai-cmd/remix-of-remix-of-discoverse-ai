@@ -287,10 +287,10 @@ async function hydrateAttachments(
 
 function AgentApp() {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isReady } = useAuth();
   useEffect(() => {
-    if (!authLoading && !user) navigate({ to: "/auth" });
-  }, [user, authLoading, navigate]);
+    if (isReady && !user) navigate({ to: "/auth" });
+  }, [user, isReady, navigate]);
 
   const [hydrated, setHydrated] = useState(false);
   const [store, setStore] = useState<Store>(() => {
@@ -324,13 +324,22 @@ function AgentApp() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!user) return;
+      // Wait for auth to be fully ready before issuing any RLS-gated queries.
+      // Without this gate, queries can run with a null auth.uid() and silently
+      // return zero rows, making the UI look "empty" after refresh/relogin.
+      if (!isReady || !user) return;
+      console.info("[chat-sync] hydrating for user", user.id);
       // Try DB first
       const { data: sessRows } = await supabase
         .from("chat_sessions")
         .select("id, title, updated_at")
         .order("updated_at", { ascending: false });
       if (cancelled) return;
+      console.info(
+        "[chat-sync] fetched sessions",
+        sessRows?.length ?? 0,
+        sessRows?.map((s) => ({ id: s.id, title: s.title }))
+      );
       if (sessRows && sessRows.length > 0) {
         const ids = sessRows.map((s) => s.id);
         const { data: msgRows } = await supabase
@@ -382,6 +391,7 @@ function AgentApp() {
           .select("id, title, updated_at")
           .single();
         if (cancelled || !created) return;
+        console.info("[chat-audit] created bootstrap session", created.id);
         setStore({
           sessions: [
             {
@@ -394,12 +404,30 @@ function AgentApp() {
           activeId: created.id,
         });
       }
+      // Fetch a small window of audit history so the user can confirm cloud
+      // writes aren't being skipped. Visible in DevTools console.
+      const { data: auditRows, error: auditErr } = await supabase
+        .from("chat_session_audit")
+        .select("operation, session_id, old_data, new_data, created_at")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (auditErr) {
+        console.warn("[chat-audit] could not load audit log", auditErr);
+      } else {
+        console.groupCollapsed(
+          `[chat-audit] recent session writes (${auditRows?.length ?? 0})`
+        );
+        (auditRows ?? []).forEach((r) =>
+          console.log(r.created_at, r.operation, r.session_id, r.new_data ?? r.old_data)
+        );
+        console.groupEnd();
+      }
       setHydrated(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, isReady]);
 
   // Persistence is now handled per-mutation against the DB.
 
@@ -904,10 +932,19 @@ function AgentApp() {
     send(input);
   }
 
-  if (authLoading || !user) {
+  if (authLoading || !isReady || !user || !hydrated) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-background text-muted-foreground">
-        <Loader2 className="size-5 animate-spin" />
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="size-5 animate-spin" />
+          <span className="text-xs">
+            {!isReady
+              ? "Restoring session…"
+              : !user
+              ? "Redirecting…"
+              : "Syncing your chats…"}
+          </span>
+        </div>
       </div>
     );
   }
