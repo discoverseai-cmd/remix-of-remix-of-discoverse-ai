@@ -1565,16 +1565,14 @@ function MessageBubble({
         {message.attachments && message.attachments.length > 0 && (
           <AttachmentList attachments={message.attachments} alignEnd={isUser} className="mb-2" />
         )}
-        {message.content && (
-          <div
-            className={
-              isUser
-                ? "bg-foreground text-background rounded-2xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap"
-                : "text-[15px] leading-relaxed text-foreground whitespace-pre-wrap"
-            }
-          >
-            {message.content}
-          </div>
+        {(message.content || streaming) && (
+          isUser ? (
+            <div className="bg-foreground text-background rounded-2xl rounded-br-md px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap">
+              {message.content}
+            </div>
+          ) : (
+            <AssistantMarkdown content={message.content} streaming={streaming} />
+          )
         )}
         {message.steps && (
           <TraceCard
