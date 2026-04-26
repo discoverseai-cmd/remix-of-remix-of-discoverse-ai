@@ -871,7 +871,7 @@ function AgentApp() {
       });
 
       // Persist final assistant message (with timeline + stop reason)
-      void supabase.from("chat_messages").insert({
+      const { error: assistantMsgError } = await supabase.from("chat_messages").insert({
         id: assistantId,
         session_id: sessionId,
         user_id: user.id,
@@ -881,6 +881,9 @@ function AgentApp() {
         timeline: finalTimeline,
         stop_reason: stopReason,
       });
+      if (assistantMsgError) {
+        console.error("Failed to save assistant message", assistantMsgError);
+      }
 
       setActiveSteps([]);
       setBusy(false);
