@@ -1523,11 +1523,13 @@ function AgentApp() {
           })}
         </div>
 
-        <div
-          className="border-t border-border p-2 shrink-0"
-          style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
-        >
-          <UserMenu
+        <RunsPanel
+          sessionId={activeSession?.id ?? null}
+          collapsed={sidebarCollapsed}
+          activeRunId={activeRunId}
+          onSelectRun={openHistoricalRun}
+        />
+
             email={user.email ?? ""}
             collapsed={sidebarCollapsed}
             running={busy}
