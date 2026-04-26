@@ -1417,11 +1417,13 @@ function AgentApp() {
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <CreditsBadge credits={credits} onUpgrade={() => setUpgradeOpen(true)} />
               {activeSession && (
                 <ModelPicker
                   value={activeSession.model}
                   onChange={(m) => setSessionModel(activeSession.id, m)}
                   disabled={busy}
+                  museumLocked={credits?.tier !== "museum"}
                 />
               )}
               <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
