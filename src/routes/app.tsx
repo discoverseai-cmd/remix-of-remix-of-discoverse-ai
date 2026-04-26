@@ -917,13 +917,9 @@ function AgentApp() {
       });
     };
 
-    const sessionModel = activeSession?.model ?? DEFAULT_MODE;
-    const resolvedModel: Exclude<ModeChoice, "auto"> =
-      sessionModel === "auto" ? autoPickModel(trimmed, attachments) : sessionModel;
-    const modelEventDetail =
-      sessionModel === "auto"
-        ? `auto → ${MODEL_LABEL[resolvedModel]}`
-        : MODEL_LABEL[resolvedModel];
+    const sessionMode = activeSession?.model ?? DEFAULT_MODE;
+    const resolvedModel = pickModelForMode(sessionMode, trimmed, attachments);
+    const modelEventDetail = MODE_LABEL[sessionMode];
 
     try {
       pushEvent("request", "Request sent", `model ${modelEventDetail}`);
