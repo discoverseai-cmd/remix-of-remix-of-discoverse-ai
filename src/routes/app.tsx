@@ -685,7 +685,7 @@ function AgentApp() {
       });
   }
 
-
+  function stop() {
     abortRef.current?.abort();
   }
 
