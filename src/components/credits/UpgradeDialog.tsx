@@ -18,7 +18,7 @@ export function CreditsBadge({
       type="button"
       onClick={onUpgrade}
       className={
-        "group inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-[11px] font-mono uppercase tracking-[0.14em] transition-colors " +
+        "group inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded-md border text-[11px] font-mono uppercase tracking-[0.12em] sm:tracking-[0.14em] transition-colors shrink-0 " +
         (isMuseum
           ? "border-foreground/40 bg-foreground/5 text-foreground hover:bg-foreground/10"
           : "border-border text-muted-foreground hover:bg-muted")
@@ -28,13 +28,14 @@ export function CreditsBadge({
           ? `Museum tier · ${credits.balance.toLocaleString()} / ${cap.toLocaleString()} this month`
           : `Park tier · ${credits.balance} / ${cap} today · click to upgrade`
       }
+      aria-label={`Credits: ${credits.balance} of ${cap}`}
     >
       <Sparkles className="size-3" />
       <span>{credits.balance.toLocaleString()}</span>
-      <span className="opacity-60">/{cap.toLocaleString()}</span>
+      <span className="opacity-60 hidden xs:inline sm:inline">/{cap.toLocaleString()}</span>
       <span
         aria-hidden
-        className="hidden sm:block w-10 h-1 rounded-full bg-muted overflow-hidden"
+        className="hidden md:block w-10 h-1 rounded-full bg-muted overflow-hidden"
       >
         <span
           className={
