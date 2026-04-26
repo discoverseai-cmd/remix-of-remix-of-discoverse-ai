@@ -856,6 +856,22 @@ function AgentApp() {
                 ))}
               </div>
             )}
+            {lastSent.length > 0 && !busy && (
+              <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none w-fit">
+                <input
+                  type="checkbox"
+                  checked={reuseLast}
+                  onChange={(e) => setReuseLast(e.target.checked)}
+                  className="size-4 accent-foreground rounded"
+                />
+                <span>
+                  Use these attachments again
+                  <span className="ml-1.5 font-mono text-foreground/70">
+                    ({lastSent.length} file{lastSent.length === 1 ? "" : "s"})
+                  </span>
+                </span>
+              </label>
+            )}
             {attachError && (
               <p className="mb-2 text-[11px] text-foreground/70">{attachError}</p>
             )}
