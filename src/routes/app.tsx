@@ -428,6 +428,19 @@ function AgentApp() {
     setPending((prev) => prev.filter((a) => a.id !== id));
   }
 
+  function reorderPending(fromId: string, toId: string) {
+    if (fromId === toId) return;
+    setPending((prev) => {
+      const from = prev.findIndex((a) => a.id === fromId);
+      const to = prev.findIndex((a) => a.id === toId);
+      if (from < 0 || to < 0) return prev;
+      const next = prev.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
     // Combine current pending with reused-last attachments (dedup by id).
